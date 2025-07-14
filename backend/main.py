@@ -11,6 +11,7 @@ from .models import DecisionContext, DecisionResult, AgentState, MemoryQuery
 from .treasury import TreasuryManager
 from .memory import MemoryManager
 from .agent import DeFiYieldAgent
+from .api import personal_router, automation_router
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -33,6 +34,10 @@ mem0_client = MemoryClient(api_key=os.getenv("MEM0_API_KEY"))
 treasury_manager = TreasuryManager(initial_balance=float(os.getenv("INITIAL_TREASURY", "1000.0")))
 memory_manager = MemoryManager(mem0_client)
 agent = DeFiYieldAgent(treasury_manager, memory_manager)
+
+# Include routers
+app.include_router(personal_router)
+app.include_router(automation_router)
 
 @app.get("/")
 async def root():

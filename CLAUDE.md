@@ -14,6 +14,7 @@ Project Athena is a DeFi Yield Agent - an autonomous AI agent that manages DeFi 
 - **Web3.py** - Base blockchain integration
 - **Mem0** - Persistent memory storage
 - **OpenAI** - LLM integration for agent intelligence
+- **GCP Services** (MVP 1.1) - BigQuery, Cloud Storage, Firestore, Cloud Functions
 
 ## Development Commands
 
@@ -32,6 +33,27 @@ pip install -r requirements.txt
 ```bash
 cp env.example .env
 # Edit .env with your API keys and configuration
+```
+
+### GCP Setup (MVP 1.1)
+```bash
+# Install GCP dependencies
+pip install google-cloud-bigquery google-cloud-firestore google-cloud-storage
+
+# Authenticate with GCP
+gcloud auth application-default login
+
+# Or use service account
+export GOOGLE_APPLICATION_CREDENTIALS="path/to/service-account-key.json"
+
+# Create BigQuery dataset
+bq mk --dataset --location=US project-athena-prod:athena_analytics
+
+# Initialize Firestore
+gcloud firestore databases create --region=us-central
+
+# Create Cloud Storage bucket
+gsutil mb -p project-athena-prod -l us-central1 gs://project-athena-storage/
 ```
 
 ### Testing API Endpoints
@@ -111,6 +133,30 @@ Memory categories:
 - `POST /memory/query` - Search persistent memories
 - `WebSocket /ws/agent` - Real-time agent updates
 
+### GCP Architecture (MVP 1.1)
+The agent integrates with Google Cloud Platform for enhanced analytics and storage:
+
+1. **BigQuery** - Analytics and historical data
+   - Transaction history aggregation
+   - Performance metrics tracking
+   - Market data time series analysis
+   - Agent decision analytics
+
+2. **Cloud Storage** - File and backup storage
+   - Agent state snapshots
+   - Configuration backups
+   - Log file archival
+
+3. **Firestore** - Real-time database
+   - Agent configuration storage
+   - Live state synchronization
+   - Multi-agent coordination data
+
+4. **Cloud Functions** - Serverless compute
+   - Scheduled market data collection
+   - Alert triggers for critical events
+   - Automated backup processes
+
 ## Critical Files to Understand
 
 1. **backend/mcp_agent.py** - Core MCP agent implementation
@@ -140,6 +186,13 @@ MEM0_API_KEY=your_mem0_api_key
 BASE_RPC_URL=https://mainnet.base.org
 AGENT_PRIVATE_KEY=your_private_key
 AGENT_ADDRESS=your_wallet_address
+
+# GCP Integration (MVP 1.1)
+GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account-key.json
+GCP_PROJECT_ID=project-athena-prod
+BIGQUERY_DATASET=athena_analytics
+FIRESTORE_COLLECTION=agent_memories
+GCS_BUCKET_NAME=project-athena-storage
 
 # Optional
 DATABASE_URL=postgresql://user:pass@localhost/defi_agent
@@ -179,3 +232,38 @@ Edit DecisionTool.execute() in backend/mcp_tools.py:437-500
 1. Add category in backend/memory.py
 2. Create storage method in MemoryManager
 3. Update Mem0Tool if needed for persistence
+
+### Working with GCP Services
+
+#### BigQuery Analytics
+```python
+# Example: Query performance metrics
+from google.cloud import bigquery
+client = bigquery.Client(project=os.getenv("GCP_PROJECT_ID"))
+query = """
+SELECT strategy_name, AVG(roi) as avg_roi
+FROM `athena_analytics.agent_decisions`
+WHERE timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)
+GROUP BY strategy_name
+"""
+results = client.query(query)
+```
+
+#### Firestore Real-time Updates
+```python
+# Example: Listen for configuration changes
+from google.cloud import firestore
+db = firestore.Client()
+doc_ref = db.collection('agent_config').document('current')
+doc_watch = doc_ref.on_snapshot(on_config_update)
+```
+
+#### Cloud Storage Operations
+```python
+# Example: Backup agent state
+from google.cloud import storage
+client = storage.Client()
+bucket = client.bucket(os.getenv("GCS_BUCKET_NAME"))
+blob = bucket.blob(f"states/{timestamp}.json")
+blob.upload_from_string(json.dumps(agent_state))
+```

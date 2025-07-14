@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  agent:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - MODE=DEVELOPMENT
+      - PORT=8080
+    volumes:
+      - ./backend:/app/backend:ro
+      - ./logs:/app/logs
+    networks:
+      - athena-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Redis for caching (if needed)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - athena-network
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+networks:
+  athena-network:
+    driver: bridge
+
+volumes:
+  redis-data:
