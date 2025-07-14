@@ -1,0 +1,5 @@
+functions-framework==3.*
+google-cloud-firestore==2.*
+google-cloud-bigquery==3.*
+aiohttp==3.*
+asyncio-throttle==1.*

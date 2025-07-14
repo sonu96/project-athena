@@ -1,0 +1,127 @@
+# Athena DeFi Agent - Production Docker Compose
+version: '3.8'
+
+services:
+  athena-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: athena-defi-agent:${VERSION:-latest}
+    container_name: athena-agent-prod
+    restart: always
+    
+    environment:
+      # Agent Configuration
+      - AGENT_ID=${AGENT_ID:-prod-agent}
+      - AGENT_STARTING_TREASURY=${AGENT_STARTING_TREASURY:-100.0}
+      - NETWORK=${NETWORK:-base-sepolia}
+      
+      # Production settings
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENVIRONMENT=production
+      
+      # Observation settings
+      - OBSERVATION_INTERVAL=${OBSERVATION_INTERVAL:-3600}  # 1 hour
+      - EMERGENCY_INTERVAL=${EMERGENCY_INTERVAL:-7200}      # 2 hours
+      
+      # Cost limits
+      - MAX_DAILY_COST=${MAX_DAILY_COST:-10.0}
+      - EMERGENCY_BALANCE_THRESHOLD=${EMERGENCY_BALANCE_THRESHOLD:-25.0}
+    
+    volumes:
+      # Production logs
+      - athena-logs:/app/logs
+      - athena-data:/app/data
+      
+      # GCP credentials from secrets
+      - /var/secrets/gcp:/app/credentials:ro
+    
+    networks:
+      - athena-prod
+    
+    # Resource limits for production
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+      
+      # Restart policy
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    
+    # Health monitoring
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    
+    # Security
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/logs
+
+  # Log aggregator
+  log-aggregator:
+    image: fluentd:v1.16-1
+    container_name: athena-logs
+    volumes:
+      - athena-logs:/fluentd/log
+      - ./deployment/fluentd.conf:/fluentd/etc/fluent.conf:ro
+    networks:
+      - athena-prod
+    profiles:
+      - monitoring
+
+  # Metrics collector
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: athena-metrics
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./deployment/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - athena-prod
+    profiles:
+      - monitoring
+
+networks:
+  athena-prod:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  athena-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/log/athena
+  
+  athena-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/athena
+  
+  prometheus-data:
+    driver: local

@@ -1,0 +1,104 @@
+[
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "When the summary was generated"
+  },
+  {
+    "name": "date",
+    "type": "DATE",
+    "mode": "REQUIRED",
+    "description": "Date of the summary (YYYY-MM-DD)"
+  },
+  {
+    "name": "total_analyses",
+    "type": "INTEGER",
+    "mode": "REQUIRED",
+    "description": "Total number of analyses performed"
+  },
+  {
+    "name": "avg_confidence",
+    "type": "FLOAT",
+    "mode": "REQUIRED",
+    "description": "Average confidence across all analyses"
+  },
+  {
+    "name": "avg_urgency",
+    "type": "FLOAT",
+    "mode": "REQUIRED",
+    "description": "Average urgency across all decisions"
+  },
+  {
+    "name": "performance_score",
+    "type": "FLOAT",
+    "mode": "REQUIRED",
+    "description": "Overall daily performance score (0.0 to 1.0)"
+  },
+  {
+    "name": "total_cost",
+    "type": "FLOAT",
+    "mode": "REQUIRED",
+    "description": "Total daily operational cost in USD"
+  },
+  {
+    "name": "cost_entries",
+    "type": "INTEGER",
+    "mode": "REQUIRED",
+    "description": "Number of cost entries recorded"
+  },
+  {
+    "name": "treasury_balance",
+    "type": "FLOAT",
+    "mode": "REQUIRED",
+    "description": "Agent treasury balance at end of day"
+  },
+  {
+    "name": "emotional_state",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Agent emotional state at end of day"
+  },
+  {
+    "name": "days_until_bankruptcy",
+    "type": "INTEGER",
+    "mode": "REQUIRED",
+    "description": "Estimated days until bankruptcy"
+  },
+  {
+    "name": "risk_assessment",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Daily risk assessment (low, medium, high)"
+  },
+  {
+    "name": "survival_status",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Survival status assessment"
+  },
+  {
+    "name": "key_insights",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "Key insights from the day"
+  },
+  {
+    "name": "optimization_suggestions",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "Suggestions for optimization"
+  },
+  {
+    "name": "learning_priorities",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "Learning priorities for next day"
+  },
+  {
+    "name": "raw_summary",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Raw JSON summary data"
+  }
+]

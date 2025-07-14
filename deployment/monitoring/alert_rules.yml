@@ -1,0 +1,216 @@
+# Prometheus alert rules for Athena DeFi Agent
+groups:
+  - name: athena_agent_alerts
+    rules:
+      # Agent Health Alerts
+      - alert: AgentDown
+        expr: up{job="athena-agent"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Athena Agent is down"
+          description: "Athena Agent has been down for more than 2 minutes"
+
+      - alert: AgentHighErrorRate
+        expr: rate(athena_agent_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate in Athena Agent"
+          description: "Error rate is {{ $value }} errors per second"
+
+      # Treasury Alerts
+      - alert: LowTreasuryBalance
+        expr: athena_agent_treasury_balance < 25
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Athena Agent treasury balance is low"
+          description: "Treasury balance is ${{ $value }}, approaching emergency threshold"
+
+      - alert: CriticalTreasuryBalance
+        expr: athena_agent_treasury_balance < 10
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Athena Agent treasury balance is critically low"
+          description: "Treasury balance is ${{ $value }}, immediate attention required"
+
+      - alert: EmergencyModeActivated
+        expr: athena_agent_emergency_mode == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Athena Agent has entered emergency mode"
+          description: "Agent has activated emergency mode due to low treasury balance"
+
+      # Cost Management Alerts
+      - alert: HighDailyCosts
+        expr: increase(athena_agent_daily_costs[1d]) > 10
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "High daily costs detected"
+          description: "Daily costs have exceeded $10: ${{ $value }}"
+
+      - alert: BurnRateHigh
+        expr: athena_agent_burn_rate > 5
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High burn rate detected"
+          description: "Current burn rate is ${{ $value }} per day"
+
+      # Market Data Alerts
+      - alert: MarketDataCollectionFailed
+        expr: increase(athena_market_data_failures_total[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Market data collection failing"
+          description: "{{ $value }} market data collection failures in the last hour"
+
+      - alert: LowDataQuality
+        expr: athena_market_data_quality < 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low market data quality"
+          description: "Market data quality is {{ $value }}, which is below acceptable threshold"
+
+      # Memory System Alerts
+      - alert: MemoryFormationFailed
+        expr: increase(athena_memory_formation_failures_total[1h]) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory formation failing"
+          description: "{{ $value }} memory formation failures in the last hour"
+
+      - alert: MemoryRetrievalSlow
+        expr: histogram_quantile(0.95, athena_memory_retrieval_duration_seconds) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow memory retrieval"
+          description: "95th percentile memory retrieval time is {{ $value }} seconds"
+
+      # Decision Making Alerts
+      - alert: DecisionMakingSlow
+        expr: histogram_quantile(0.95, athena_decision_duration_seconds) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow decision making"
+          description: "95th percentile decision time is {{ $value }} seconds"
+
+      - alert: LowDecisionConfidence
+        expr: athena_decision_confidence < 0.3
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low decision confidence"
+          description: "Average decision confidence is {{ $value }}"
+
+  - name: cloud_function_alerts
+    rules:
+      # Cloud Function Health
+      - alert: CloudFunctionErrors
+        expr: increase(cloudfunctions_function_execution_count{status!="ok"}[15m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cloud Function errors detected"
+          description: "Function {{ $labels.function_name }} has {{ $value }} errors in 15 minutes"
+
+      - alert: CloudFunctionTimeout
+        expr: increase(cloudfunctions_function_execution_count{status="timeout"}[30m]) > 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cloud Function timeouts"
+          description: "Function {{ $labels.function_name }} has timed out {{ $value }} times"
+
+      - alert: CloudFunctionHighLatency
+        expr: cloudfunctions_function_execution_time_seconds > 60
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Cloud Function latency"
+          description: "Function {{ $labels.function_name }} latency is {{ $value }} seconds"
+
+  - name: infrastructure_alerts
+    rules:
+      # System Resource Alerts
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is above 90%: {{ $value }}"
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is above 80%: {{ $value }}%"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Disk usage is above 80% on {{ $labels.mountpoint }}: {{ $value }}"
+
+  - name: business_logic_alerts
+    rules:
+      # Business Logic Alerts
+      - alert: NoMarketObservations
+        expr: increase(athena_observations_total[1h]) == 0
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "No market observations in the last hour"
+          description: "Agent has not made any market observations for over an hour"
+
+      - alert: SurvivalModeExtended
+        expr: athena_agent_emergency_mode == 1
+        for: 6h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Agent in survival mode for extended period"
+          description: "Agent has been in emergency mode for over 6 hours"
+
+      - alert: DecisionStuck
+        expr: time() - athena_last_decision_timestamp > 7200
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Agent decision making appears stuck"
+          description: "No decisions made in over 2 hours"

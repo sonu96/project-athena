@@ -1,0 +1,67 @@
+# Terraform variables example for Athena DeFi Agent
+# Copy this file to terraform.tfvars and fill in your values
+
+# GCP Project Configuration
+project_id              = "your-gcp-project-id"
+region                  = "us-central1"
+zone                    = "us-central1-a"
+terraform_state_bucket  = "your-terraform-state-bucket"
+
+# Database Configuration
+firestore_database_id   = "athena-agent"
+firestore_location      = "us-central"
+bigquery_dataset_id     = "athena_defi_agent"
+
+# Scheduler Configuration
+scheduler_timezone      = "UTC"
+
+# API Keys (sensitive - consider using environment variables)
+anthropic_api_key       = "your-anthropic-api-key"
+langsmith_api_key       = "your-langsmith-api-key"
+langsmith_project       = "athena-defi-agent"
+
+# Notification Configuration
+notification_channels   = [
+  # "projects/your-project/notificationChannels/your-channel-id"
+]
+
+# Environment Configuration
+environment             = "prod"
+
+# Agent Configuration
+agent_config = {
+  starting_treasury     = 100.0
+  max_daily_cost       = 10.0
+  observation_interval = 3600    # 1 hour in seconds
+  emergency_threshold  = 25.0
+}
+
+# Feature Flags
+enable_monitoring       = true
+enable_logging          = true
+enable_vpc_connector    = false
+
+# Resource Configuration
+function_memory = {
+  market_data_collector = "256Mi"
+  hourly_analysis      = "256Mi"
+  daily_summary        = "512Mi"
+}
+
+function_timeout = {
+  market_data_collector = 60
+  hourly_analysis      = 120
+  daily_summary        = 300
+}
+
+bigquery_table_expiration_days = 365
+cloud_functions_max_instances   = 10
+
+# Resource Tags
+tags = {
+  project     = "athena-defi-agent"
+  environment = "production"
+  managed_by  = "terraform"
+  owner       = "your-name"
+  cost_center = "research"
+}

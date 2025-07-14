@@ -1,0 +1,98 @@
+[
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "When the memory was formed"
+  },
+  {
+    "name": "memory_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Unique identifier for this memory"
+  },
+  {
+    "name": "agent_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Agent identifier"
+  },
+  {
+    "name": "memory_category",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Category of memory (survival, protocol, market, strategy, decision)"
+  },
+  {
+    "name": "experience_type",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Type of experience that created the memory"
+  },
+  {
+    "name": "importance_score",
+    "type": "FLOAT",
+    "mode": "REQUIRED",
+    "description": "Importance score of the memory (0.0 to 1.0)"
+  },
+  {
+    "name": "emotional_state",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Agent emotional state when memory was formed"
+  },
+  {
+    "name": "market_condition",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Market condition when memory was formed"
+  },
+  {
+    "name": "treasury_balance",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Treasury balance when memory was formed"
+  },
+  {
+    "name": "memory_content",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Content of the memory"
+  },
+  {
+    "name": "key_concepts",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "Key concepts extracted from the experience"
+  },
+  {
+    "name": "related_memories",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "IDs of related memories"
+  },
+  {
+    "name": "retrieval_count",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Number of times this memory has been retrieved"
+  },
+  {
+    "name": "last_accessed",
+    "type": "TIMESTAMP",
+    "mode": "NULLABLE",
+    "description": "When this memory was last accessed"
+  },
+  {
+    "name": "mem0_memory_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Corresponding memory ID in Mem0 system"
+  },
+  {
+    "name": "raw_experience",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Raw JSON experience data"
+  }
+]

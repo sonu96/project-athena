@@ -1,42 +1,103 @@
+# Athena DeFi Agent - Development Docker Compose
 version: '3.8'
 
 services:
-  agent:
-    build: .
-    ports:
-      - "8080:8080"
-    env_file:
-      - .env
+  athena-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: athena-defi-agent
+    restart: unless-stopped
     environment:
-      - MODE=DEVELOPMENT
-      - PORT=8080
+      # Agent Configuration
+      - AGENT_ID=docker-dev-agent
+      - AGENT_STARTING_TREASURY=100.0
+      - NETWORK=base-sepolia
+      
+      # API Keys (override in .env file)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MEM0_API_KEY=${MEM0_API_KEY}
+      - CDP_API_KEY_NAME=${CDP_API_KEY_NAME}
+      - CDP_API_KEY_SECRET=${CDP_API_KEY_SECRET}
+      
+      # GCP Configuration
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/gcp-key.json
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - FIRESTORE_DATABASE=${FIRESTORE_DATABASE:-athena-dev}
+      - BIGQUERY_DATASET=${BIGQUERY_DATASET:-athena_dev}
+      
+      # LangSmith Configuration
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-athena-dev}
+      
+      # Development settings
+      - LOG_LEVEL=INFO
+      - ENVIRONMENT=development
+    
     volumes:
-      - ./backend:/app/backend:ro
+      # Mount source code for development
+      - ./src:/app/src:ro
       - ./logs:/app/logs
+      
+      # Mount GCP credentials (create this file separately)
+      - ./credentials:/app/credentials:ro
+    
+    ports:
+      # Health check port
+      - "8080:8080"
+    
     networks:
       - athena-network
-    restart: unless-stopped
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    
+    # Health check
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
-  # Optional: Redis for caching (if needed)
-  redis:
-    image: redis:7-alpine
+  # Local testing database (optional)
+  firestore-emulator:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
+    container_name: firestore-emulator
+    command: |
+      sh -c "gcloud beta emulators firestore start --host-port=0.0.0.0:8180"
     ports:
-      - "6379:6379"
+      - "8180:8180"
     networks:
       - athena-network
-    volumes:
-      - redis-data:/data
-    restart: unless-stopped
+    profiles:
+      - testing
+
+  # BigQuery emulator (optional)
+  bigquery-emulator:
+    image: ghcr.io/goccy/bigquery-emulator:latest
+    container_name: bigquery-emulator
+    ports:
+      - "9050:9050"
+    networks:
+      - athena-network
+    profiles:
+      - testing
 
 networks:
   athena-network:
     driver: bridge
 
 volumes:
-  redis-data:
+  athena-logs:
+    driver: local
+  athena-data:
+    driver: local

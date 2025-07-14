@@ -1,0 +1,80 @@
+[
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "When the market data was collected"
+  },
+  {
+    "name": "collection_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Unique identifier for this data collection"
+  },
+  {
+    "name": "source",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Data source (coingecko, fear_greed, defillama)"
+  },
+  {
+    "name": "data_quality",
+    "type": "FLOAT",
+    "mode": "REQUIRED",
+    "description": "Quality score of the data (0.0 to 1.0)"
+  },
+  {
+    "name": "bitcoin_price",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Bitcoin price in USD"
+  },
+  {
+    "name": "bitcoin_24h_change",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Bitcoin 24h price change percentage"
+  },
+  {
+    "name": "ethereum_price",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Ethereum price in USD"
+  },
+  {
+    "name": "ethereum_24h_change",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "Ethereum 24h price change percentage"
+  },
+  {
+    "name": "fear_greed_index",
+    "type": "INTEGER",
+    "mode": "NULLABLE",
+    "description": "Fear and Greed Index (0-100)"
+  },
+  {
+    "name": "fear_greed_classification",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Fear and Greed classification text"
+  },
+  {
+    "name": "base_tvl",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "BASE network Total Value Locked"
+  },
+  {
+    "name": "base_24h_change",
+    "type": "FLOAT",
+    "mode": "NULLABLE",
+    "description": "BASE network TVL 24h change percentage"
+  },
+  {
+    "name": "raw_data",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Raw JSON data from the source"
+  }
+]

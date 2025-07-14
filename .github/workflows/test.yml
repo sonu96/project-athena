@@ -1,0 +1,227 @@
+# Athena DeFi Agent - Automated Testing Pipeline
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run tests daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  PYTHON_VERSION: '3.11'
+  
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11']
+        test-suite: ['unit', 'integration', 'e2e']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Set up test environment
+      run: |
+        # Create test directories
+        mkdir -p logs data
+        
+        # Set test environment variables
+        echo "TESTING=true" >> $GITHUB_ENV
+        echo "ANTHROPIC_API_KEY=test_key" >> $GITHUB_ENV
+        echo "OPENAI_API_KEY=test_key" >> $GITHUB_ENV
+        echo "MEM0_API_KEY=test_key" >> $GITHUB_ENV
+        echo "CDP_API_KEY_NAME=test_key" >> $GITHUB_ENV
+        echo "CDP_API_KEY_SECRET=test_secret" >> $GITHUB_ENV
+        echo "GOOGLE_APPLICATION_CREDENTIALS=test_credentials" >> $GITHUB_ENV
+        echo "GCP_PROJECT_ID=test_project" >> $GITHUB_ENV
+        echo "FIRESTORE_DATABASE=test_db" >> $GITHUB_ENV
+        echo "BIGQUERY_DATASET=test_dataset" >> $GITHUB_ENV
+    
+    - name: Lint with ruff
+      run: |
+        ruff check src/ --output-format=github
+        ruff format src/ --check
+    
+    - name: Type check with mypy
+      run: |
+        mypy src/ --ignore-missing-imports --no-strict-optional
+    
+    - name: Run unit tests
+      if: matrix.test-suite == 'unit'
+      run: |
+        pytest tests/unit/ -v --cov=src --cov-report=xml --cov-report=term-missing
+    
+    - name: Run integration tests
+      if: matrix.test-suite == 'integration'
+      run: |
+        pytest tests/integration/ -v --cov=src --cov-report=xml --cov-report=term-missing
+    
+    - name: Run end-to-end tests
+      if: matrix.test-suite == 'e2e'
+      run: |
+        pytest tests/e2e/ -v --timeout=300 --cov=src --cov-report=xml --cov-report=term-missing
+    
+    - name: Upload coverage to Codecov
+      if: matrix.python-version == '3.11'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: ${{ matrix.test-suite }}
+        name: codecov-${{ matrix.test-suite }}
+        fail_ci_if_error: false
+
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install security tools
+      run: |
+        pip install bandit safety pip-audit
+    
+    - name: Run bandit security scan
+      run: |
+        bandit -r src/ -f json -o bandit-report.json || true
+    
+    - name: Run safety check
+      run: |
+        safety check --json --output safety-report.json || true
+    
+    - name: Run pip-audit
+      run: |
+        pip-audit --format=json --output=pip-audit-report.json || true
+    
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+          pip-audit-report.json
+
+  dependency-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Check for dependency updates
+      run: |
+        pip install pip-check-reqs pip-tools
+        pip-compile --upgrade requirements.in || echo "No requirements.in found"
+        pip-check-reqs --requirements-file requirements.txt src/
+    
+    - name: Check for unused dependencies
+      run: |
+        pip install pipreqs
+        pipreqs src/ --print | grep -v "^$" > actual-requirements.txt || true
+        echo "Current requirements:" && cat requirements.txt
+        echo "Actual requirements:" && cat actual-requirements.txt
+
+  docker-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      run: |
+        docker build -t athena-agent:test .
+    
+    - name: Test Docker image
+      run: |
+        # Test that the image builds and starts correctly
+        docker run --rm athena-agent:test python -c "import src.core.agent; print('Docker image OK')"
+    
+    - name: Test Docker Compose
+      run: |
+        # Create minimal test environment
+        mkdir -p credentials logs
+        echo '{}' > credentials/gcp-key.json
+        
+        # Test compose file syntax
+        docker-compose config
+        
+        # Test that services can be created (but don't start them fully)
+        docker-compose build athena-agent
+
+  performance-test:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || contains(github.event.head_commit.message, '[perf-test]')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install pytest-benchmark memory-profiler
+    
+    - name: Run performance tests
+      run: |
+        pytest tests/ -k "benchmark" --benchmark-json=benchmark.json
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: benchmark.json
+
+  test-summary:
+    runs-on: ubuntu-latest
+    needs: [test, security-scan, dependency-check, docker-test]
+    if: always()
+    
+    steps:
+    - name: Test Summary
+      run: |
+        echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Integration Tests | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| E2E Tests | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Security Scan | ${{ needs.security-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Dependency Check | ${{ needs.dependency-check.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Docker Test | ${{ needs.docker-test.result }} |" >> $GITHUB_STEP_SUMMARY

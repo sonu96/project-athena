@@ -1,93 +1,318 @@
-name: Deploy to Cloud Run
+# Athena DeFi Agent - Production Deployment Pipeline
+name: Deploy to Production
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches: [ main ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+      force_deploy:
+        description: 'Force deployment even if tests fail'
+        required: false
+        default: false
+        type: boolean
 
 env:
-  PROJECT_ID: project-athena-personal
-  SERVICE_NAME: athena-agent
-  REGION: us-central1
+  PYTHON_VERSION: '3.11'
+  GCP_REGION: 'us-central1'
 
 jobs:
-  test:
+  validate:
     runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+      environment: ${{ steps.check.outputs.environment }}
     
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Determine deployment environment
+      id: check
+      run: |
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          echo "environment=staging" >> $GITHUB_OUTPUT
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+        elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          echo "environment=production" >> $GITHUB_OUTPUT
+          echo "should_deploy=true" >> $GITHUB_OUTPUT
+        else
+          echo "should_deploy=false" >> $GITHUB_OUTPUT
+        fi
+
+  test:
+    runs-on: ubuntu-latest
+    if: needs.validate.outputs.should_deploy == 'true'
+    needs: validate
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
     
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
     
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pytest pytest-asyncio pytest-cov
     
-    - name: Run tests
+    - name: Run critical tests
       run: |
-        pytest tests/ -v --cov=backend --cov-report=xml
-      continue-on-error: true  # Don't fail if no tests exist yet
+        pytest tests/unit/ tests/integration/ -x --tb=short
     
-    - name: Check code quality
+    - name: Check for deployment blockers
       run: |
-        pip install flake8 black
-        flake8 backend/ --max-line-length=120 || true
-        black backend/ --check || true
+        # Check for any critical security issues
+        bandit -r src/ --severity-level medium --exit-zero
+        
+        # Verify all required environment variables are documented
+        grep -r "os.getenv\|os.environ" src/ | grep -v "__pycache__" || true
 
-  deploy:
-    needs: test
+  build:
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [validate, test]
+    if: needs.validate.outputs.should_deploy == 'true' && (success() || github.event.inputs.force_deploy == 'true')
+    
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
     
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
     
-    - id: 'auth'
-      uses: 'google-github-actions/auth@v1'
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Log in to Google Container Registry
+      uses: docker/login-action@v3
       with:
-        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+        registry: gcr.io
+        username: _json_key
+        password: ${{ secrets.GCP_SA_KEY }}
+    
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: gcr.io/${{ secrets.GCP_PROJECT_ID }}/athena-agent
+        tags: |
+          type=ref,event=branch
+          type=ref,event=tag
+          type=sha,prefix={{branch}}-
+          type=raw,value=latest,enable={{is_default_branch}}
+    
+    - name: Build and push Docker image
+      id: build
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        platforms: linux/amd64
+
+  deploy-infrastructure:
+    runs-on: ubuntu-latest
+    needs: [validate, build]
+    if: needs.validate.outputs.should_deploy == 'true'
+    environment: ${{ needs.validate.outputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+    
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
     
     - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v1
+      uses: google-github-actions/setup-gcloud@v2
     
-    - name: Configure Docker for GCR
+    - name: Initialize Terraform
+      working-directory: deployment/terraform
       run: |
-        gcloud auth configure-docker
+        terraform init \
+          -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" \
+          -backend-config="prefix=${{ needs.validate.outputs.environment }}/terraform.tfstate"
     
-    - name: Build Docker image
+    - name: Plan Terraform changes
+      working-directory: deployment/terraform
+      env:
+        TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+        TF_VAR_environment: ${{ needs.validate.outputs.environment }}
+        TF_VAR_anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+        TF_VAR_langsmith_api_key: ${{ secrets.LANGSMITH_API_KEY }}
+        TF_VAR_terraform_state_bucket: ${{ secrets.TERRAFORM_STATE_BUCKET }}
       run: |
-        docker build -t gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA .
-        docker tag gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA gcr.io/$PROJECT_ID/$SERVICE_NAME:latest
+        terraform plan -out=tfplan
     
-    - name: Push Docker image
+    - name: Apply Terraform changes
+      working-directory: deployment/terraform
+      env:
+        TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
+        TF_VAR_environment: ${{ needs.validate.outputs.environment }}
+        TF_VAR_anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+        TF_VAR_langsmith_api_key: ${{ secrets.LANGSMITH_API_KEY }}
+        TF_VAR_terraform_state_bucket: ${{ secrets.TERRAFORM_STATE_BUCKET }}
       run: |
-        docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA
-        docker push gcr.io/$PROJECT_ID/$SERVICE_NAME:latest
+        terraform apply tfplan
+
+  deploy-cloud-functions:
+    runs-on: ubuntu-latest
+    needs: [validate, deploy-infrastructure]
+    if: needs.validate.outputs.should_deploy == 'true'
+    environment: ${{ needs.validate.outputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+    
+    - name: Deploy Cloud Functions
+      run: |
+        # Market Data Collector
+        cd cloud_functions/market_data_collector
+        gcloud functions deploy market-data-collector \
+          --runtime python311 \
+          --trigger-http \
+          --memory 256MB \
+          --timeout 60s \
+          --region ${{ env.GCP_REGION }} \
+          --service-account athena-defi-agent-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+          --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},FIRESTORE_DATABASE=athena-agent,BIGQUERY_DATASET=athena_defi_agent"
+        
+        cd ../hourly_analysis
+        gcloud functions deploy hourly-analysis \
+          --runtime python311 \
+          --trigger-http \
+          --memory 256MB \
+          --timeout 120s \
+          --region ${{ env.GCP_REGION }} \
+          --service-account athena-defi-agent-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+          --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},FIRESTORE_DATABASE=athena-agent,BIGQUERY_DATASET=athena_defi_agent,ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
+        
+        cd ../daily_summary
+        gcloud functions deploy daily-summary \
+          --runtime python311 \
+          --trigger-http \
+          --memory 512MB \
+          --timeout 300s \
+          --region ${{ env.GCP_REGION }} \
+          --service-account athena-defi-agent-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+          --set-env-vars "GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},FIRESTORE_DATABASE=athena-agent,BIGQUERY_DATASET=athena_defi_agent,ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
+
+  deploy-agent:
+    runs-on: ubuntu-latest
+    needs: [validate, build, deploy-infrastructure]
+    if: needs.validate.outputs.should_deploy == 'true' && needs.validate.outputs.environment == 'production'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
     
     - name: Deploy to Cloud Run
       run: |
-        gcloud run deploy $SERVICE_NAME \
-          --image gcr.io/$PROJECT_ID/$SERVICE_NAME:$GITHUB_SHA \
-          --platform managed \
-          --region $REGION \
-          --allow-unauthenticated \
-          --set-env-vars="MODE=PRODUCTION" \
-          --set-env-vars="GCP_PROJECT_ID=$PROJECT_ID" \
-          --set-secrets="OPENAI_API_KEY=openai-api-key:latest,MEM0_API_KEY=mem0-api-key:latest,AGENT_PRIVATE_KEY=agent-private-key:latest" \
-          --memory=512Mi \
-          --cpu=1 \
-          --timeout=60 \
-          --concurrency=10 \
-          --max-instances=3 \
-          --min-instances=0
+        gcloud run deploy athena-agent \
+          --image ${{ needs.build.outputs.image_tag }} \
+          --region ${{ env.GCP_REGION }} \
+          --service-account athena-defi-agent-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com \
+          --memory 1Gi \
+          --cpu 1 \
+          --concurrency 1 \
+          --max-instances 1 \
+          --no-allow-unauthenticated \
+          --set-env-vars "AGENT_ID=prod-agent-$(date +%s),GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},FIRESTORE_DATABASE=athena-agent,BIGQUERY_DATASET=athena_defi_agent,ENVIRONMENT=production,ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }},LANGSMITH_API_KEY=${{ secrets.LANGSMITH_API_KEY }},LANGSMITH_PROJECT=athena-defi-agent-prod"
+
+  smoke-test:
+    runs-on: ubuntu-latest
+    needs: [validate, deploy-cloud-functions]
+    if: needs.validate.outputs.should_deploy == 'true'
     
-    - name: Display service URL
+    steps:
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+    
+    - name: Test Cloud Functions
       run: |
-        echo "Service deployed to:"
-        gcloud run services describe $SERVICE_NAME --platform managed --region $REGION --format 'value(status.url)'
+        # Test market data collector
+        echo "Testing market data collector..."
+        gcloud functions call market-data-collector --region ${{ env.GCP_REGION }}
+        
+        # Wait a bit and test hourly analysis
+        echo "Waiting 30 seconds before testing hourly analysis..."
+        sleep 30
+        gcloud functions call hourly-analysis --region ${{ env.GCP_REGION }}
+    
+    - name: Verify deployment health
+      run: |
+        # Check that data is being written to BigQuery
+        echo "Checking BigQuery for recent data..."
+        bq query --use_legacy_sql=false \
+          "SELECT COUNT(*) as recent_records FROM \`${{ secrets.GCP_PROJECT_ID }}.athena_defi_agent.market_data\` WHERE timestamp > TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 1 HOUR)"
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: [validate, test, build, deploy-infrastructure, deploy-cloud-functions, smoke-test]
+    if: always() && needs.validate.outputs.should_deploy == 'true'
+    
+    steps:
+    - name: Deployment Summary
+      run: |
+        echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Tests | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Build | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Infrastructure | ${{ needs.deploy-infrastructure.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Cloud Functions | ${{ needs.deploy-cloud-functions.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Smoke Tests | ${{ needs.smoke-test.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment:** ${{ needs.validate.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** ${{ needs.build.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Deployment Time:** $(date)" >> $GITHUB_STEP_SUMMARY

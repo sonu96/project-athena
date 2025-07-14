@@ -1,0 +1,43 @@
+# Prometheus configuration for Athena DeFi Agent monitoring
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert_rules.yml"
+
+scrape_configs:
+  # Athena Agent metrics
+  - job_name: 'athena-agent'
+    static_configs:
+      - targets: ['athena-agent:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Google Cloud Function metrics
+  - job_name: 'gcp-cloud-functions'
+    gce_sd_configs:
+      - project: 'your-gcp-project-id'
+        zone: 'us-central1-a'
+        port: 8080
+    relabel_configs:
+      - source_labels: [__meta_gce_label_function_name]
+        regex: 'athena-.*'
+        action: keep
+
+  # Node exporter for system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093

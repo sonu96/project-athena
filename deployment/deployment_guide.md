@@ -1,217 +1,326 @@
-# Project Athena - Deployment Guide
+# Athena DeFi Agent - Production Deployment Guide
+
+This guide provides comprehensive instructions for deploying the Athena DeFi Agent to Google Cloud Platform in production.
 
 ## Prerequisites
 
-1. **Google Cloud Account**
-   - Create a GCP project: `project-athena-personal`
-   - Enable required APIs:
-     ```bash
-     gcloud services enable \
-       run.googleapis.com \
-       cloudbuild.googleapis.com \
-       secretmanager.googleapis.com \
-       firestore.googleapis.com \
-       storage.googleapis.com
-     ```
+### Required Tools
+- [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (gcloud CLI)
+- [Terraform](https://www.terraform.io/downloads.html) >= 1.0
+- [Docker](https://docs.docker.com/get-docker/)
+- Python 3.9+ (for local testing)
 
-2. **GitHub Repository**
-   - Fork/clone the repository
-   - Set up GitHub secrets (Settings > Secrets):
-     - `GCP_SA_KEY`: Service account JSON key
+### Required Accounts & Services
+- Google Cloud Platform account with billing enabled
+- GCP project with appropriate permissions
+- Anthropic API account (for Claude)
+- LangSmith account (optional, for monitoring)
+- Mem0 account (for memory system)
+- CDP (Coinbase Developer Platform) account
 
-3. **Local Development Tools**
-   - Docker Desktop installed
-   - gcloud CLI installed and configured
-   - Python 3.11+
+## Quick Start
 
-## Initial Setup
-
-### 1. Create GCP Service Account
+### 1. Environment Setup
 
 ```bash
-# Create service account
-gcloud iam service-accounts create athena-deployer \
-  --display-name="Athena Deployer"
+# Clone the repository
+git clone https://github.com/your-org/athena-defi-agent.git
+cd athena-defi-agent
 
-# Grant necessary permissions
-gcloud projects add-iam-policy-binding PROJECT_ID \
-  --member="serviceAccount:athena-deployer@PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/run.admin"
-
-gcloud projects add-iam-policy-binding PROJECT_ID \
-  --member="serviceAccount:athena-deployer@PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/storage.admin"
-
-gcloud projects add-iam-policy-binding PROJECT_ID \
-  --member="serviceAccount:athena-deployer@PROJECT_ID.iam.gserviceaccount.com" \
-  --role="roles/cloudbuild.builds.builder"
-
-# Download key
-gcloud iam service-accounts keys create key.json \
-  --iam-account=athena-deployer@PROJECT_ID.iam.gserviceaccount.com
+# Set environment variables
+export GCP_PROJECT_ID="your-gcp-project-id"
+export GCP_REGION="us-central1"
+export TERRAFORM_STATE_BUCKET="your-terraform-state-bucket"
 ```
 
-### 2. Set Up Secrets in Secret Manager
+### 2. Authentication
 
 ```bash
-# Create secrets
-echo -n "your-openai-key" | gcloud secrets create openai-api-key --data-file=-
-echo -n "your-mem0-key" | gcloud secrets create mem0-api-key --data-file=-
-echo -n "your-private-key" | gcloud secrets create agent-private-key --data-file=-
+# Authenticate with Google Cloud
+gcloud auth login
+gcloud config set project $GCP_PROJECT_ID
+
+# Enable required APIs (first time only)
+gcloud services enable \
+  cloudresourcemanager.googleapis.com \
+  cloudfunctions.googleapis.com \
+  cloudscheduler.googleapis.com \
+  firestore.googleapis.com \
+  bigquery.googleapis.com \
+  secretmanager.googleapis.com \
+  monitoring.googleapis.com \
+  logging.googleapis.com \
+  run.googleapis.com
 ```
 
-### 3. Configure Firestore
+### 3. Configure Secrets
 
 ```bash
-# Create Firestore database
-gcloud firestore databases create --region=us-central
+# Store API keys in Secret Manager
+gcloud secrets create anthropic-api-key --data-file=<(echo -n "your-anthropic-key")
+gcloud secrets create langsmith-api-key --data-file=<(echo -n "your-langsmith-key")
+gcloud secrets create mem0-api-key --data-file=<(echo -n "your-mem0-key")
+gcloud secrets create cdp-api-key-name --data-file=<(echo -n "your-cdp-key-name")
+gcloud secrets create cdp-api-key-secret --data-file=<(echo -n "your-cdp-key-secret")
 ```
 
-### 4. Create Cloud Storage Bucket
+### 4. Deploy
 
 ```bash
-# Create bucket for backups
-gsutil mb -p PROJECT_ID -l us-central1 gs://project-athena-storage/
+# Run the automated deployment script
+./deployment/deploy_production.sh
 ```
 
-## Local Development
+## Manual Deployment Steps
 
-### 1. Build and Run Locally
+If you prefer manual deployment or need to troubleshoot:
+
+### Step 1: Infrastructure Deployment
 
 ```bash
-# Copy environment file
-cp .env.example .env
-# Edit .env with your development values
+cd deployment/terraform
 
-# Build and run with Docker Compose
-docker-compose up --build
+# Copy and configure variables
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
+
+# Initialize Terraform
+terraform init \
+  -backend-config="bucket=$TERRAFORM_STATE_BUCKET" \
+  -backend-config="prefix=production/terraform.tfstate"
+
+# Plan and apply
+terraform plan -var-file=terraform.tfvars
+terraform apply -var-file=terraform.tfvars
 ```
 
-### 2. Test the Application
+### Step 2: Build and Push Docker Image
 
 ```bash
-# Health check
-curl http://localhost:8080/health
+# Build the image
+docker build -t gcr.io/$GCP_PROJECT_ID/athena-agent:latest .
 
-# Get agent state
-curl http://localhost:8080/agent/state
+# Configure Docker for GCR
+gcloud auth configure-docker
+
+# Push the image
+docker push gcr.io/$GCP_PROJECT_ID/athena-agent:latest
 ```
 
-## Deployment
-
-### 1. Manual Deployment
+### Step 3: Deploy Cloud Functions
 
 ```bash
-# Build and push image
-docker build -t gcr.io/PROJECT_ID/athena-agent:latest .
-docker push gcr.io/PROJECT_ID/athena-agent:latest
+# Market Data Collector
+cd cloud_functions/market_data_collector
+gcloud functions deploy market-data-collector \
+  --runtime python311 \
+  --trigger-http \
+  --memory 256MB \
+  --timeout 60s \
+  --region $GCP_REGION \
+  --service-account athena-defi-agent-sa@$GCP_PROJECT_ID.iam.gserviceaccount.com
 
+# Hourly Analysis
+cd ../hourly_analysis
+gcloud functions deploy hourly-analysis \
+  --runtime python311 \
+  --trigger-http \
+  --memory 256MB \
+  --timeout 120s \
+  --region $GCP_REGION \
+  --service-account athena-defi-agent-sa@$GCP_PROJECT_ID.iam.gserviceaccount.com
+
+# Daily Summary
+cd ../daily_summary
+gcloud functions deploy daily-summary \
+  --runtime python311 \
+  --trigger-http \
+  --memory 512MB \
+  --timeout 300s \
+  --region $GCP_REGION \
+  --service-account athena-defi-agent-sa@$GCP_PROJECT_ID.iam.gserviceaccount.com
+```
+
+### Step 4: Deploy Main Agent
+
+```bash
 # Deploy to Cloud Run
 gcloud run deploy athena-agent \
-  --image gcr.io/PROJECT_ID/athena-agent:latest \
-  --platform managed \
-  --region us-central1 \
-  --allow-unauthenticated
+  --image gcr.io/$GCP_PROJECT_ID/athena-agent:latest \
+  --region $GCP_REGION \
+  --service-account athena-defi-agent-sa@$GCP_PROJECT_ID.iam.gserviceaccount.com \
+  --memory 1Gi \
+  --cpu 1 \
+  --concurrency 1 \
+  --max-instances 1 \
+  --no-allow-unauthenticated
 ```
 
-### 2. Automated Deployment
+## Configuration
 
-Simply push to the main branch:
-```bash
-git add .
-git commit -m "Deploy: your message"
-git push origin main
-```
+### Environment Variables
 
-GitHub Actions will automatically:
-1. Run tests
-2. Build Docker image
-3. Push to GCR
-4. Deploy to Cloud Run
+The agent requires the following environment variables:
 
-## Monitoring
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `GCP_PROJECT_ID` | Your GCP project ID | Yes |
+| `FIRESTORE_DATABASE` | Firestore database name | Yes |
+| `BIGQUERY_DATASET` | BigQuery dataset name | Yes |
+| `ANTHROPIC_API_KEY` | Anthropic API key | Yes |
+| `LANGSMITH_API_KEY` | LangSmith API key | No |
+| `MEM0_API_KEY` | Mem0 API key | Yes |
+| `CDP_API_KEY_NAME` | CDP API key name | Yes |
+| `CDP_API_KEY_SECRET` | CDP API key secret | Yes |
+| `AGENT_ID` | Unique agent identifier | Yes |
+| `AGENT_STARTING_TREASURY` | Starting treasury amount | No (default: 100) |
 
-### 1. View Logs
+### Agent Configuration
 
-```bash
-# Stream logs
-gcloud run logs tail athena-agent --region=us-central1
-
-# View in console
-gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=athena-agent" --limit 50
-```
-
-### 2. Check Service Status
+Key configuration parameters:
 
 ```bash
-# Get service details
-gcloud run services describe athena-agent --region=us-central1
+# Agent behavior
+AGENT_STARTING_TREASURY=100.0
+OBSERVATION_INTERVAL=3600        # 1 hour
+EMERGENCY_INTERVAL=7200          # 2 hours in emergency mode
 
-# Get service URL
-gcloud run services describe athena-agent --region=us-central1 --format='value(status.url)'
+# Cost management
+MAX_DAILY_COST=10.0
+EMERGENCY_BALANCE_THRESHOLD=25.0
+
+# Network settings
+NETWORK=base-sepolia             # Use base-sepolia for testnet
 ```
 
-## Cost Optimization
+## Monitoring & Alerting
 
-1. **Cloud Run Settings**
-   - Min instances: 0 (scales to zero)
-   - Max instances: 3 (prevent runaway costs)
-   - Memory: 512Mi (sufficient for agent)
-   - CPU: 1 (can increase if needed)
+### Built-in Monitoring
 
-2. **Firestore**
-   - Use batch operations
-   - Implement caching
-   - Clean up old data regularly
+The deployment includes:
 
-3. **Monitoring**
-   - Set up budget alerts at $25 and $40
-   - Review Cloud Run metrics weekly
-   - Monitor Firestore usage
+- **Cloud Function monitoring**: Automatic error and latency alerts
+- **BigQuery monitoring**: Data quality and ingestion monitoring
+- **Agent health checks**: Treasury balance and operational status
+- **Cost tracking**: Daily cost monitoring and burn rate alerts
+
+### Accessing Monitoring
+
+1. **Cloud Console**: https://console.cloud.google.com/monitoring?project=YOUR_PROJECT_ID
+2. **Logs**: https://console.cloud.google.com/logs?project=YOUR_PROJECT_ID
+3. **BigQuery**: https://console.cloud.google.com/bigquery?project=YOUR_PROJECT_ID
+
+### Key Metrics to Monitor
+
+- `athena_agent_treasury_balance`: Current treasury balance
+- `athena_agent_emergency_mode`: Emergency mode status (0/1)
+- `athena_daily_costs`: Daily operational costs
+- `athena_market_data_quality`: Market data quality score
+- `athena_decision_confidence`: Agent decision confidence
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Deploy fails with permission error**
-   - Check service account permissions
-   - Ensure APIs are enabled
+1. **Authentication Errors**
+   ```bash
+   # Re-authenticate
+   gcloud auth login
+   gcloud auth application-default login
+   ```
 
-2. **Container crashes on start**
-   - Check environment variables
-   - Review logs for missing dependencies
+2. **Permission Errors**
+   ```bash
+   # Check IAM permissions
+   gcloud projects get-iam-policy $GCP_PROJECT_ID
+   ```
 
-3. **High latency**
-   - Check cold start times
-   - Consider keeping 1 min instance
+3. **Function Deployment Failures**
+   ```bash
+   # Check function logs
+   gcloud functions logs read FUNCTION_NAME --region $GCP_REGION
+   ```
 
-4. **Memory errors**
-   - Increase Cloud Run memory limit
-   - Optimize Mem0 queries
+4. **Memory Formation Issues**
+   - Verify Mem0 API key is correct
+   - Check Mem0 service status
+   - Review memory formation logs
 
-## Security Best Practices
+5. **Market Data Collection Issues**
+   - Check external API rate limits
+   - Verify internet connectivity from Cloud Functions
+   - Review data quality scores
 
-1. **Never commit secrets**
-   - Use Secret Manager for all sensitive data
-   - Keep .env files out of git
+### Debugging Commands
 
-2. **Limit access**
-   - Use IAM for team members
-   - Enable audit logging
+```bash
+# View recent logs
+gcloud logging read "resource.type=\"cloud_function\"" --limit=50
 
-3. **Regular updates**
-   - Update dependencies monthly
-   - Monitor security advisories
+# Check BigQuery data
+bq query --use_legacy_sql=false "SELECT * FROM \`$GCP_PROJECT_ID.athena_defi_agent.market_data\` ORDER BY timestamp DESC LIMIT 10"
+
+# Test function directly
+gcloud functions call FUNCTION_NAME --region $GCP_REGION
+
+# Check agent status
+gcloud run services describe athena-agent --region $GCP_REGION
+```
 
 ## Maintenance
 
-### Weekly Tasks
-- Review logs for errors
-- Check cost dashboard
-- Verify backups are running
+### Regular Tasks
 
-### Monthly Tasks
-- Update dependencies
-- Review and optimize queries
-- Clean up old data
-- Security audit
+1. **Weekly**: Review agent performance and cost metrics
+2. **Monthly**: Update dependencies and security patches
+3. **Quarterly**: Review and optimize model selection and costs
+
+### Scaling Considerations
+
+- **Increase treasury**: Modify `AGENT_STARTING_TREASURY` for longer operation
+- **Adjust observation frequency**: Modify `OBSERVATION_INTERVAL` based on market conditions
+- **Cost optimization**: Review and adjust model selection thresholds
+
+### Backup & Recovery
+
+- **Infrastructure**: Terraform state is backed up in GCS
+- **Data**: BigQuery provides automatic backups
+- **Memory**: Mem0 handles memory persistence
+- **Firestore**: Automatic multi-region replication
+
+## Security Considerations
+
+### Secret Management
+- All API keys stored in Google Secret Manager
+- Service account with minimal required permissions
+- No secrets in environment variables or code
+
+### Network Security
+- Cloud Functions run in Google's secure environment
+- No public endpoints for the main agent
+- VPC configuration available for enhanced security
+
+### Data Privacy
+- All market data is public information
+- No personal or sensitive data processed
+- Compliance with data retention policies
+
+## Support & Maintenance
+
+### Getting Help
+
+1. **Documentation**: Check this guide and the main README
+2. **Logs**: Always check Cloud Logging for detailed error information
+3. **Monitoring**: Use Cloud Monitoring dashboards for operational insights
+4. **GitHub Issues**: Report bugs and feature requests
+
+### Emergency Procedures
+
+1. **Agent Stuck**: Restart Cloud Run service
+2. **High Costs**: Reduce observation frequency or pause operations
+3. **Data Issues**: Check BigQuery and Firestore for data integrity
+4. **API Limits**: Review rate limiting and implement backoff strategies
+
+---
+
+For additional support, please refer to the project documentation or open an issue on GitHub.
