@@ -11,6 +11,7 @@ import json
 from .treasury import TreasuryManager
 from .memory_manager import MemoryManager
 from .market_detector import MarketConditionDetector
+from .nervous_system import NervousSystem
 from ..data.firestore_client import FirestoreClient
 from ..data.bigquery_client import BigQueryClient
 from ..data.market_data_collector import MarketDataCollector
@@ -37,6 +38,7 @@ class DeFiAgent:
         self.market_data_collector: Optional[MarketDataCollector] = None
         self.cdp: Optional[CDPIntegration] = None
         self.llm_workflows: Optional[LLMWorkflowIntegration] = None
+        self.nervous_system: Optional[NervousSystem] = None
         
         # Integrations
         self.mem0: Optional[Mem0Integration] = None
@@ -147,54 +149,65 @@ class DeFiAgent:
     
     @monitor_workflow("agent_operations")
     async def start_operations(self) -> None:
-        """Start main agent operations loop"""
+        """Start main agent operations using the nervous system"""
         try:
             self.running = True
             logger.info("🚀 Athena starting operations...")
             
+            # Initialize the nervous system
+            self.nervous_system = NervousSystem()
+            await self.nervous_system.initialize()
+            
             # Create startup memory
             await self.mem0.add_memory(
-                content="Agent operations started. Beginning Phase 1: Market observation and memory formation with survival instincts active.",
+                content="Agent consciousness awakened. Beginning Phase 1 with unified nervous system: Sense → Think → Feel → Decide → Learn.",
                 metadata={
                     "category": "agent_lifecycle",
                     "importance": 0.9,
                     "phase": self.phase,
-                    "startup_time": datetime.now(timezone.utc).isoformat()
+                    "startup_time": datetime.now(timezone.utc).isoformat(),
+                    "consciousness_enabled": True
                 }
             )
             
-            # Main operations loop
+            # Main consciousness loop
             while self.running:
                 try:
-                    loop_start = datetime.now(timezone.utc)
+                    # Run one complete cognitive cycle
+                    consciousness_state = await self.nervous_system.run_consciousness_cycle()
                     
-                    # Check survival status first
-                    await self._check_survival_status()
+                    # Update agent metrics from consciousness
+                    self.observation_count = consciousness_state.get('cycle_count', 0)
+                    self.decisions_made = consciousness_state.get('cycle_count', 0)  # Each cycle includes a decision
+                    self.metrics['total_observations'] = self.observation_count
+                    self.metrics['memories_formed'] = len(consciousness_state.get('recent_memories', []))
+                    self.metrics['total_costs'] = consciousness_state.get('total_cost', 0.0)
                     
-                    # Perform hourly observation
-                    await self._perform_observation_cycle()
+                    # Log consciousness state periodically
+                    if consciousness_state['cycle_count'] % 10 == 0:
+                        state_summary = self.nervous_system.get_current_state()
+                        logger.info(f"🧠 Consciousness state: {state_summary['emotional_state']}, "
+                                  f"Mode: {state_summary['operational_mode']}, "
+                                  f"Goal: {state_summary['current_goal']}")
                     
-                    # Update memories and learning
-                    await self._update_learning()
+                    # Generate daily summary based on cycles (24 cycles = ~1 day at normal rate)
+                    if consciousness_state['cycle_count'] % 24 == 0 and consciousness_state['cycle_count'] > 0:
+                        await self._generate_daily_summary_if_needed()
                     
-                    # Generate daily summary if needed
-                    await self._generate_daily_summary_if_needed()
+                    # Get operational interval from nervous system (adjusted by emotional state)
+                    interval = self.nervous_system.get_operational_interval()
                     
-                    # Calculate next observation time
-                    next_observation = loop_start + timedelta(seconds=self.config['observation_interval'])
-                    sleep_duration = (next_observation - datetime.now(timezone.utc)).total_seconds()
-                    
-                    if sleep_duration > 0:
-                        logger.info(f"💤 Sleeping for {sleep_duration:.0f} seconds until next observation...")
-                        await asyncio.sleep(sleep_duration)
+                    # Sleep until next cycle
+                    logger.info(f"💤 Sleeping for {interval/3600:.1f} hours until next consciousness cycle...")
+                    await asyncio.sleep(interval)
                     
                 except asyncio.CancelledError:
                     logger.info("🛑 Agent operations cancelled")
                     break
                 except Exception as e:
-                    logger.error(f"❌ Error in operations loop: {e}")
+                    logger.error(f"❌ Error in consciousness loop: {e}")
                     # Continue running despite errors
-                    await asyncio.sleep(60)  # Wait 1 minute before retry
+                    await asyncio.sleep(300)  # Wait 5 minutes before retry
             
         except Exception as e:
             logger.error(f"❌ Critical error in agent operations: {e}")
@@ -514,6 +527,11 @@ class DeFiAgent:
                 if self.metrics['uptime_start'] else 0
             )
             
+            # Get nervous system state if available
+            nervous_system_state = {}
+            if self.nervous_system:
+                nervous_system_state = self.nervous_system.get_current_state()
+            
             return {
                 "agent_id": settings.agent_id,
                 "status": "running" if self.running else "stopped",
@@ -525,6 +543,14 @@ class DeFiAgent:
                 "capabilities": self.capabilities,
                 "config": self.config,
                 "metrics": self.metrics,
+                "nervous_system": nervous_system_state,
+                "consciousness": {
+                    "enabled": self.nervous_system is not None,
+                    "emotional_state": nervous_system_state.get("emotional_state", "unknown"),
+                    "operational_mode": nervous_system_state.get("operational_mode", "unknown"),
+                    "current_goal": nervous_system_state.get("current_goal", "unknown"),
+                    "cycle_count": nervous_system_state.get("cycle_count", 0)
+                },
                 "last_observation": self.last_observation_time.isoformat() if self.last_observation_time else None
             }
             

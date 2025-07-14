@@ -24,7 +24,7 @@ langgraph==0.0.20
 mem0ai==0.0.11
 
 # Blockchain
-cdp-sdk==0.0.1
+cdp-sdk==1.22.0  # Now using real CDP SDK with Python 3.10+
 
 # Market Data
 aiohttp==3.9.1

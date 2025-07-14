@@ -6,6 +6,9 @@ from typing import Dict, List, Any, Optional, TypedDict
 from dataclasses import dataclass
 from datetime import datetime
 
+# Import ConsciousnessState for the nervous system
+from .consciousness import ConsciousnessState
+
 
 class AgentState(TypedDict):
     """Base state for all Athena workflows"""
@@ -95,3 +98,13 @@ class WorkflowConfig:
     # LangSmith
     enable_tracing: bool = True
     project_name: str = "athena-defi-phase1"
+
+
+# Export all state types
+__all__ = [
+    'AgentState',
+    'MarketAnalysisState', 
+    'DecisionState',
+    'ConsciousnessState',
+    'WorkflowConfig'
+]

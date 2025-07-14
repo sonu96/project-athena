@@ -8,7 +8,14 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 import logging
-from cdp import Cdp, Wallet, WalletData
+
+try:
+    from cdp import Cdp, Wallet, WalletData
+    CDP_AVAILABLE = True
+except ImportError:
+    CDP_AVAILABLE = False
+    logger = logging.getLogger(__name__)
+    logger.warning("CDP SDK not available. Python 3.10+ required. Agent will run in simulation mode.")
 
 from ..config.settings import settings
 
@@ -27,6 +34,11 @@ class CDPIntegration:
     async def initialize_wallet(self) -> bool:
         """Initialize or load existing wallet"""
         try:
+            if not CDP_AVAILABLE:
+                logger.warning("CDP SDK not available. Running in simulation mode.")
+                logger.info("To use real CDP, upgrade to Python 3.10+ and install: pip install cdp-sdk")
+                return await self._initialize_simulation_wallet()
+            
             # Configure CDP
             Cdp.configure(
                 api_key_name=settings.cdp_api_key_name,
@@ -63,6 +75,19 @@ class CDPIntegration:
     
     async def get_wallet_balance(self) -> Dict[str, float]:
         """Get current wallet balances"""
+        if not CDP_AVAILABLE:
+            # Return simulated balance
+            if not hasattr(self, '_simulation_balance'):
+                self._simulation_balance = settings.agent_starting_treasury
+            
+            return {
+                "total_usd": self._simulation_balance,
+                "ETH": self._simulation_balance / 3000,  # Mock ETH price
+                "USDC": self._simulation_balance * 0.7,
+                "simulation": True
+            }
+        
+        # Real CDP implementation
         try:
             if not self.wallet:
                 await self.initialize_wallet()
@@ -95,6 +120,26 @@ class CDPIntegration:
     
     async def get_testnet_tokens(self) -> bool:
         """Request testnet tokens from faucet"""
+        if not CDP_AVAILABLE:
+            # Simulate faucet
+            logger.info("🚰 Requesting testnet tokens (simulation)...")
+            await asyncio.sleep(1)
+            
+            if hasattr(self, '_simulation_balance'):
+                self._simulation_balance += 10.0
+                
+                # Update saved balance
+                if os.path.exists(self.wallet_file):
+                    with open(self.wallet_file, 'r') as f:
+                        wallet_data = json.load(f)
+                    wallet_data["balance"] = self._simulation_balance
+                    with open(self.wallet_file, 'w') as f:
+                        json.dump(wallet_data, f, indent=2)
+            
+            logger.info("✅ Received 10 USDC testnet tokens (simulation)")
+            return True
+        
+        # Real CDP implementation
         try:
             if not self.wallet:
                 await self.initialize_wallet()
@@ -294,3 +339,52 @@ class CDPIntegration:
                 "requirements": [],
                 "estimated_cost": 0
             }
+    
+    # Simulation methods for when CDP SDK is not available
+    async def _initialize_simulation_wallet(self) -> bool:
+        """Initialize simulated wallet when CDP SDK is not available"""
+        try:
+            import random
+            
+            logger.info("Initializing simulation wallet...")
+            
+            # Check if wallet exists
+            if os.path.exists(self.wallet_file):
+                with open(self.wallet_file, 'r') as f:
+                    wallet_data = json.load(f)
+                    self._simulation_balance = wallet_data.get("balance", settings.agent_starting_treasury)
+                    self.wallet = type('MockWallet', (), {
+                        'default_address': wallet_data.get("address", "0x" + "a" * 40),
+                        'network': self.network
+                    })()
+                logger.info(f"✅ Loaded simulation wallet: {self.wallet.default_address}")
+            else:
+                # Create new simulated wallet
+                os.makedirs(os.path.dirname(self.wallet_file), exist_ok=True)
+                
+                address = "0x" + "".join(random.choices("0123456789abcdef", k=40))
+                self.wallet = type('MockWallet', (), {
+                    'default_address': address,
+                    'network': self.network
+                })()
+                self._simulation_balance = settings.agent_starting_treasury
+                
+                # Save wallet
+                wallet_data = {
+                    "address": address,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "balance": self._simulation_balance,
+                    "network": self.network,
+                    "is_simulation": True
+                }
+                
+                with open(self.wallet_file, 'w') as f:
+                    json.dump(wallet_data, f, indent=2)
+                
+                logger.info(f"✅ Created simulation wallet: {address}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Simulation wallet initialization failed: {e}")
+            return False
