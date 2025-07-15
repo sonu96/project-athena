@@ -23,14 +23,25 @@ class BigQueryClient:
         self.dataset_id = settings.bigquery_dataset
         self.project_id = settings.gcp_project_id
         
-        # Table configurations
+        # Table configurations - Updated for yield optimization
         self.tables = {
+            # Core tables
             'market_data': 'market_data',
             'treasury_snapshots': 'treasury_snapshots',
             'decisions': 'agent_decisions',
             'costs': 'cost_tracking',
-            'memories': 'memory_formations',
-            'performance': 'performance_metrics'
+            
+            # Yield optimization tables
+            'yield_performance': 'yield_performance',
+            'rebalancing_events': 'rebalancing_events',
+            'compound_events': 'compound_events',
+            'risk_events': 'risk_events',
+            'gas_patterns': 'gas_patterns',
+            'bridge_performance': 'bridge_performance',
+            
+            # Enhanced tables
+            'memory_effectiveness': 'memory_effectiveness',
+            'protocol_analytics': 'protocol_analytics'
         }
     
     async def initialize_dataset(self) -> bool:
@@ -328,4 +339,158 @@ class BigQueryClient:
             return [dict(row) for row in results]
         except Exception as e:
             logger.error(f"❌ Error analyzing emotional transitions: {e}")
+            return []
+    
+    # ========== YIELD OPTIMIZATION METHODS ==========
+    
+    async def insert_yield_performance(self, performance_data: Dict[str, Any]) -> bool:
+        """Insert yield performance record"""
+        try:
+            table_id = f"{self.project_id}.{self.dataset_id}.{self.tables['yield_performance']}"
+            errors = self.client.insert_rows_json(table_id, [performance_data])
+            
+            if errors:
+                logger.error(f"❌ Error inserting yield performance: {errors}")
+                return False
+            
+            logger.info(f"✅ Yield performance record inserted: {performance_data.get('position_id')}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error inserting yield performance: {e}")
+            return False
+    
+    async def insert_rebalancing_event(self, event_data: Dict[str, Any]) -> bool:
+        """Insert rebalancing event"""
+        try:
+            table_id = f"{self.project_id}.{self.dataset_id}.{self.tables['rebalancing_events']}"
+            errors = self.client.insert_rows_json(table_id, [event_data])
+            
+            if errors:
+                logger.error(f"❌ Error inserting rebalancing event: {errors}")
+                return False
+            
+            logger.info(f"✅ Rebalancing event inserted: {event_data.get('rebalance_id')}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error inserting rebalancing event: {e}")
+            return False
+    
+    async def insert_compound_event(self, event_data: Dict[str, Any]) -> bool:
+        """Insert compound event"""
+        try:
+            table_id = f"{self.project_id}.{self.dataset_id}.{self.tables['compound_events']}"
+            errors = self.client.insert_rows_json(table_id, [event_data])
+            
+            if errors:
+                logger.error(f"❌ Error inserting compound event: {errors}")
+                return False
+            
+            logger.info(f"✅ Compound event inserted: {event_data.get('compound_id')}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error inserting compound event: {e}")
+            return False
+    
+    async def insert_risk_event(self, event_data: Dict[str, Any]) -> bool:
+        """Insert risk event"""
+        try:
+            table_id = f"{self.project_id}.{self.dataset_id}.{self.tables['risk_events']}"
+            errors = self.client.insert_rows_json(table_id, [event_data])
+            
+            if errors:
+                logger.error(f"❌ Error inserting risk event: {errors}")
+                return False
+            
+            logger.info(f"✅ Risk event inserted: {event_data.get('event_id')}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error inserting risk event: {e}")
+            return False
+    
+    async def get_protocol_performance(self, protocol: str, chain: str, days: int = 30) -> Dict[str, Any]:
+        """Get protocol performance analytics"""
+        query = f"""
+        SELECT 
+            COUNT(DISTINCT position_id) as total_positions,
+            AVG(realized_apy) as avg_realized_apy,
+            AVG(advertised_apy) as avg_advertised_apy,
+            AVG(realized_apy - advertised_apy) as avg_apy_variance,
+            SUM(net_profit_usd) as total_profit,
+            AVG(position_duration_hours / 24) as avg_position_days,
+            COUNT(DISTINCT CASE WHEN exit_reason = 'risk_event' THEN position_id END) as risk_exits
+        FROM `{self.project_id}.{self.dataset_id}.{self.tables['yield_performance']}`
+        WHERE protocol = @protocol 
+            AND chain = @chain
+            AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("protocol", "STRING", protocol),
+                bigquery.ScalarQueryParameter("chain", "STRING", chain),
+            ]
+        )
+        
+        try:
+            results = self.client.query(query, job_config=job_config).result()
+            return dict(next(results))
+        except Exception as e:
+            logger.error(f"❌ Error getting protocol performance: {e}")
+            return {}
+    
+    async def get_gas_optimization_patterns(self, chain: str) -> List[Dict[str, Any]]:
+        """Get gas optimization patterns for a chain"""
+        query = f"""
+        SELECT 
+            hour_utc,
+            day_of_week,
+            AVG(gas_price_gwei) as avg_gas_price,
+            MIN(gas_price_gwei) as min_gas_price,
+            AVG(gas_price_usd) as avg_gas_cost_usd,
+            COUNT(*) as sample_count
+        FROM `{self.project_id}.{self.dataset_id}.{self.tables['gas_patterns']}`
+        WHERE chain = @chain
+            AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY)
+        GROUP BY hour_utc, day_of_week
+        ORDER BY avg_gas_price ASC
+        LIMIT 24
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("chain", "STRING", chain),
+            ]
+        )
+        
+        try:
+            results = self.client.query(query, job_config=job_config).result()
+            return [dict(row) for row in results]
+        except Exception as e:
+            logger.error(f"❌ Error getting gas patterns: {e}")
+            return []
+    
+    async def get_effective_memories(self, min_profit_impact: float = 10.0) -> List[Dict[str, Any]]:
+        """Get most effective memories by profit impact"""
+        query = f"""
+        SELECT 
+            memory_id,
+            category,
+            content,
+            importance_current,
+            recall_count,
+            decisions_influenced,
+            profit_impact_usd,
+            accuracy_score
+        FROM `{self.project_id}.{self.dataset_id}.{self.tables['memory_effectiveness']}`
+        WHERE profit_impact_usd >= {min_profit_impact}
+            AND permanent_memory = true
+        ORDER BY profit_impact_usd DESC
+        LIMIT 50
+        """
+        
+        try:
+            results = self.client.query(query).result()
+            return [dict(row) for row in results]
+        except Exception as e:
+            logger.error(f"❌ Error getting effective memories: {e}")
             return []

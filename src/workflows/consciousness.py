@@ -39,6 +39,11 @@ class ConsciousnessState(TypedDict):
     current_experience: Dict[str, Any]
     lessons_learned: List[str]
     
+    # Position Data (V1 addition)
+    position_data: Dict[str, Any]  # Current DeFi positions
+    yield_metrics: Dict[str, Any]  # APY, rewards, compound history
+    compound_history: List[Dict[str, Any]]  # Recent compound events
+    
     # Operational State
     cycle_count: int
     total_cost: float

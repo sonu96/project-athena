@@ -37,13 +37,17 @@ class Mem0Integration:
         self.memory = Memory.from_config(config)
         self.agent_id = settings.agent_id
         
-        # Memory categories for organization
+        # Memory categories for yield optimization
         self.categories = {
             'survival': 'survival_critical',
-            'protocol': 'protocol_behavior',
-            'strategy': 'strategy_performance',
-            'market': 'market_patterns',
-            'decision': 'decision_outcomes'
+            'yield_patterns': 'yield_patterns',
+            'risk_indicators': 'risk_indicators',
+            'gas_patterns': 'gas_optimization',
+            'bridge_patterns': 'cross_chain_patterns',
+            'protocol_behavior': 'protocol_specific',
+            'compound_strategies': 'compound_optimization',
+            'rebalance_triggers': 'rebalance_patterns',
+            'decision_outcomes': 'decision_outcomes'
         }
         
         # Memory importance thresholds
@@ -85,48 +89,97 @@ class Mem0Integration:
                 }
             ]
             
-            # Market behavior knowledge
-            market_memories = [
+            # Yield optimization knowledge
+            yield_memories = [
                 {
-                    "content": "High volatility (>5% daily swings) often precedes major market moves. Increase observation frequency during volatile periods.",
+                    "content": "Stable coin pools typically offer 5-15% APY with minimal impermanent loss risk. Prioritize these in risk-averse states.",
                     "metadata": {
-                        "category": "market_patterns",
+                        "category": "yield_patterns",
                         "importance": 0.7,
-                        "context": "volatility_response"
+                        "context": "stable_yields"
                     }
                 },
                 {
-                    "content": "Gas prices above 100 gwei indicate network congestion. Delay non-urgent operations when gas is expensive.",
+                    "content": "Advertised APYs often include reward tokens. Real yields are typically 20-30% lower after accounting for price volatility.",
                     "metadata": {
-                        "category": "market_patterns",
+                        "category": "yield_patterns",
+                        "importance": 0.8,
+                        "context": "apy_reality"
+                    }
+                },
+                {
+                    "content": "Compound rewards when they exceed $10 or 5% of position value. Smaller amounts aren't worth the gas costs.",
+                    "metadata": {
+                        "category": "compound_optimization",
                         "importance": 0.6,
-                        "context": "gas_optimization"
+                        "context": "compound_threshold"
                     }
                 }
             ]
             
-            # Protocol knowledge
-            protocol_memories = [
+            # Risk indicator knowledge
+            risk_memories = [
                 {
-                    "content": "Established protocols like Aave and Compound generally offer more stability but lower yields than newer protocols.",
+                    "content": "TVL dropping 30% in 24 hours is a strong exit signal. This pattern preceded 3 major protocol exploits.",
                     "metadata": {
-                        "category": "protocol_behavior",
-                        "importance": 0.6,
-                        "context": "protocol_selection"
+                        "category": "risk_indicators",
+                        "importance": 0.95,
+                        "context": "tvl_exodus"
                     }
                 },
                 {
-                    "content": "Always check protocol TVL and audit status before considering interaction. Low TVL or unaudited protocols pose higher risks.",
+                    "content": "Unusually high APYs (>100%) often indicate unsustainable tokenomics or high risk. Approach with extreme caution.",
                     "metadata": {
-                        "category": "protocol_behavior",
-                        "importance": 0.8,
-                        "context": "risk_assessment"
+                        "category": "risk_indicators",
+                        "importance": 0.85,
+                        "context": "unsustainable_yields"
+                    }
+                }
+            ]
+            
+            # Gas optimization knowledge
+            gas_memories = [
+                {
+                    "content": "Base chain gas is typically 70% cheaper between 2-5 AM UTC on weekends. Schedule non-urgent operations accordingly.",
+                    "metadata": {
+                        "category": "gas_optimization",
+                        "importance": 0.7,
+                        "context": "base_gas_patterns"
+                    }
+                },
+                {
+                    "content": "Batch similar operations together. Multiple position updates in one transaction save 40-60% on gas costs.",
+                    "metadata": {
+                        "category": "gas_optimization",
+                        "importance": 0.6,
+                        "context": "batching_strategy"
+                    }
+                }
+            ]
+            
+            # Bridge pattern knowledge
+            bridge_memories = [
+                {
+                    "content": "Stargate offers reliable USDC bridging between chains. Sunday nights typically have lowest bridge congestion.",
+                    "metadata": {
+                        "category": "cross_chain_patterns",
+                        "importance": 0.6,
+                        "context": "bridge_timing"
+                    }
+                },
+                {
+                    "content": "Cross-chain arbitrage needs >5% APY difference to be profitable after bridge costs and risks.",
+                    "metadata": {
+                        "category": "cross_chain_patterns",
+                        "importance": 0.7,
+                        "context": "arbitrage_threshold"
                     }
                 }
             ]
             
             # Store initial memories
-            all_memories = survival_memories + market_memories + protocol_memories
+            all_memories = (survival_memories + yield_memories + risk_memories + 
+                          gas_memories + bridge_memories)
             
             for memory_data in all_memories:
                 await self.add_memory(

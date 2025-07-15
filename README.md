@@ -1,9 +1,10 @@
 # 🏛️ Athena DeFi Agent
 
-An autonomous AI agent with genuine survival instincts, unified consciousness via LangGraph, and adaptive behavior operating on the BASE network.
+An autonomous AI agent with genuine survival instincts, unified consciousness via LangGraph, and adaptive behavior operating on the BASE network. V1 implements a focused Compound V3 yield strategy with emotional intelligence.
 
 ## 🌟 Features
 
+### Core Capabilities
 - **LangGraph Nervous System**: Unified consciousness through Sense → Think → Feel → Decide → Learn cycle
 - **Emotional Intelligence**: Dynamic emotional states (desperate → cautious → stable → confident) that affect behavior
 - **Adaptive Operation**: Automatically adjusts observation frequency and costs based on treasury health
@@ -12,6 +13,14 @@ An autonomous AI agent with genuine survival instincts, unified consciousness vi
 - **Market Intelligence**: Observes and analyzes DeFi market conditions
 - **Cost Consciousness**: Tracks every operation cost with survival pressure
 - **Transparent Operations**: Full observability via LangSmith tracing
+
+### V1 Specific Features (Compound V3 Strategy)
+- **Yield Optimization**: Automated compounding on Compound V3 with profitability checks
+- **Gas Pattern Learning**: Identifies optimal gas windows (weekends, 2-4 AM UTC)
+- **Emotional Multipliers**: Requires 1.5x-3x gas coverage based on emotional state
+- **Survival Memories**: Forms permanent memories during desperate situations
+- **Position Tracking**: Complete position state management and performance metrics
+- **Compound History**: Tracks all compound events with reasoning and outcomes
 
 ## 🏗️ Architecture
 
@@ -28,19 +37,19 @@ An autonomous AI agent with genuine survival instincts, unified consciousness vi
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                        GCP PROJECT                               │
+│                    V1 COMPOUND STRATEGY                          │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────┐ │
-│  │ Cloud       │  │ Firestore   │  │ BigQuery    │  │ Secret  │ │
-│  │ Functions   │  │ (Real-time) │  │ (Analytics) │  │ Manager │ │
+│  │ Position    │  │ Yield       │  │ Gas         │  │ Survival│ │
+│  │ Manager     │  │ Optimizer   │  │ Patterns    │  │ Memory  │ │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────┘ │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     AGENT CORE SYSTEM                           │
+│                        GCP PROJECT                               │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────┐ │
-│  │   Mem0      │  │ LangGraph   │  │ CDP         │  │ Market  │ │
-│  │ (Memory)    │  │ (Workflows) │  │ AgentKit    │  │ Data    │ │
+│  │ Cloud       │  │ Firestore   │  │ BigQuery    │  │ Secret  │ │
+│  │ Functions   │  │ (Real-time) │  │ (Analytics) │  │ Manager │ │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────┘ │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -97,7 +106,7 @@ python scripts/setup_gcp.py
 ### Running the Agent
 
 ```bash
-# Run locally
+# Run V1 Compound strategy
 python -m src.core.agent
 
 # Run with Docker
@@ -105,6 +114,9 @@ docker-compose up
 
 # Run with LangSmith tracing
 LANGSMITH_API_KEY=your_key python -m src.core.agent
+
+# Test V1 components
+python test_v1_compound.py
 ```
 
 ## 🧠 LangGraph Nervous System
@@ -119,22 +131,43 @@ The agent uses a unified consciousness model with 5 cognitive nodes:
 
 ### Emotional States & Behavior
 
-| Treasury Balance | Days Until Bankruptcy | Emotional State | Operational Mode | Observation Interval |
-|------------------|-----------------------|-----------------|------------------|---------------------|
-| < $25            | < 5 days              | Desperate 😱    | Survival         | 4 hours            |
-| < $50            | < 10 days             | Cautious 😟     | Conservative     | 2 hours            |
-| < $100           | < 30 days             | Stable 😊       | Normal           | 1 hour             |
-| > $100           | > 30 days             | Confident 😎    | Growth           | 30 minutes         |
+| Days Until Bankruptcy | Emotional State | Operational Mode | Compound Multiplier | Observation Interval |
+|-----------------------|-----------------|------------------|-------------------|---------------------|
+| < 7 days              | Desperate 😱    | Survival         | 3.0x gas cost    | 4 hours            |
+| < 20 days             | Cautious 😟     | Conservative     | 2.0x gas cost    | 2 hours            |
+| < 90 days             | Stable 😊       | Normal           | 1.5x gas cost    | 1 hour             |
+| > 90 days             | Confident 😎    | Growth           | 1.5x gas cost    | 30 minutes         |
 
-## 📊 Phase 1 Success Criteria
+### V1 Compound Strategy Behavior
 
+- **Data Collection**: Gas prices every 5 min, Compound APY every 15 min
+- **Yield Check**: Every 4 hours (adjusts with emotional state)
+- **Gas Optimization**: Learns patterns, prefers 2-4 AM UTC weekends
+- **Compound Logic**: Only compounds when `rewards > multiplier × gas_cost`
+- **Survival Mode**: Forms permanent memories, ultra-conservative
+
+## 📊 V1 Success Criteria
+
+### Core Requirements
 - ✅ 30+ days continuous operation
-- ✅ 100+ meaningful memories formed
-- ✅ <$300 total operational costs
-- ✅ Accurate market condition detection
+- ✅ Never bankrupt (maintain positive treasury)
+- ✅ Net profitable after gas costs
+- ✅ Successful Compound V3 integration
 - ✅ Appropriate emotional state transitions
-- ✅ Successful CDP wallet integration
-- ✅ Adaptive behavior based on treasury
+
+### Learning & Optimization
+- ✅ Gas pattern identification (weekends, night hours)
+- ✅ Optimal compound frequency discovered
+- ✅ Survival memories formed during desperate times
+- ✅ Average gas cost < $0.50 per compound
+- ✅ Compound efficiency > 80%
+
+### V1 Metrics
+- Starting Capital: $30 USDC
+- Target APY: 4-5% on Compound V3
+- Gas Budget: < 20% of rewards
+- Compound Frequency: Every 2-4 days (optimized)
+- Emergency Threshold: < 7 days runway
 
 ## 🧪 Testing
 

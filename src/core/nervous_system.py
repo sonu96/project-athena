@@ -62,6 +62,9 @@ class NervousSystem:
             decision_confidence=0.5,
             current_experience={},
             lessons_learned=[],
+            position_data={},  # V1 addition
+            yield_metrics={},  # V1 addition
+            compound_history=[],  # V1 addition
             cycle_count=0,
             total_cost=0.0,
             timestamp=datetime.now(timezone.utc),

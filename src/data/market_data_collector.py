@@ -60,6 +60,8 @@ class MarketDataCollector:
             'fear_greed_classification': 'Neutral',
             'gas_price_gwei': 0.0,
             'base_network_tvl': 0.0,
+            'compound_v3_apy': 0.0,  # Added for V1
+            'compound_v3_tvl': 0.0,  # Added for V1
             'data_sources': [],
             'data_quality_score': 0.0
         }
@@ -300,6 +302,131 @@ class MarketDataCollector:
             'base_block_time': 2,  # seconds
             'base_network_health': 'good'
         }
+    
+    async def collect_compound_data(self, cdp_integration=None) -> Dict[str, Any]:
+        """Collect Compound V3 specific data for V1"""
+        try:
+            logger.info("💰 Collecting Compound V3 data...")
+            
+            # Get Compound APY from CDP integration if available
+            if cdp_integration:
+                compound_apy = await cdp_integration.get_compound_apy()
+            else:
+                # Simulate for testing
+                import random
+                compound_apy = 4.2 + random.uniform(-0.5, 0.5)
+            
+            # Get Compound TVL from DefiLlama
+            compound_tvl = await self._get_compound_tvl()
+            
+            compound_data = {
+                'compound_v3_apy': compound_apy,
+                'compound_v3_tvl': compound_tvl,
+                'compound_utilization': 85.0 + random.uniform(-5, 5) if not cdp_integration else 85.0,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Store in Firestore
+            await self.firestore.collection('agent_data_yield_data').document('compound_v3').set(compound_data, merge=True)
+            
+            # Store in BigQuery for historical tracking
+            await self.bigquery.insert_yield_performance({
+                **compound_data,
+                'protocol': 'compound_v3',
+                'chain': 'base'
+            })
+            
+            logger.info(f"✅ Compound data collected: APY {compound_apy:.2f}%, TVL ${compound_tvl/1e9:.2f}B")
+            
+            return compound_data
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to collect Compound data: {e}")
+            return {
+                'compound_v3_apy': 0.0,
+                'compound_v3_tvl': 0.0
+            }
+    
+    async def collect_gas_data(self, cdp_integration=None) -> Dict[str, Any]:
+        """Collect gas price data every 5 minutes for V1"""
+        try:
+            logger.info("⛽ Collecting gas price data...")
+            
+            # Get gas price from CDP or simulate
+            if cdp_integration:
+                gas_data = await cdp_integration.get_gas_price()
+            else:
+                # Simulate realistic Base network gas prices
+                import random
+                hour = datetime.now(timezone.utc).hour
+                day = datetime.now(timezone.utc).strftime("%A")
+                
+                base_gas = 5.0
+                # Lower gas on weekends and nights
+                if day in ["Saturday", "Sunday"]:
+                    base_gas *= 0.7
+                if 2 <= hour <= 4:
+                    base_gas *= 0.5
+                
+                gas_data = {
+                    'gas_price_gwei': base_gas * random.uniform(0.8, 1.2),
+                    'estimated_cost_usd': base_gas * 0.0002
+                }
+            
+            # Add time metadata
+            gas_data.update({
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'hour_utc': datetime.now(timezone.utc).hour,
+                'day_of_week': datetime.now(timezone.utc).strftime("%A"),
+                'is_weekend': datetime.now(timezone.utc).weekday() >= 5
+            })
+            
+            # Store in Firestore for real-time access
+            await self.firestore.collection('agent_data_gas_prices').document('latest').set(gas_data, merge=True)
+            
+            # Store in BigQuery for pattern analysis
+            await self.bigquery.insert_rows(
+                dataset_id=self.bigquery.dataset_id,
+                table_id='base_gas_prices',
+                rows=[gas_data]
+            )
+            
+            logger.info(f"✅ Gas data collected: {gas_data['gas_price_gwei']:.2f} gwei (${gas_data['estimated_cost_usd']:.4f})")
+            
+            return gas_data
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to collect gas data: {e}")
+            return {
+                'gas_price_gwei': 5.0,
+                'estimated_cost_usd': 0.001
+            }
+    
+    async def _get_compound_tvl(self) -> float:
+        """Get Compound V3 TVL from DefiLlama"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Get Compound protocol TVL
+                url = f"{self.sources['defillama']['base_url']}/tvl/compound-v3"
+                
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        tvl_data = await response.json()
+                        return float(tvl_data) if isinstance(tvl_data, (int, float)) else 2.5e9  # Default 2.5B
+                    else:
+                        # Fallback to general Compound data
+                        url = f"{self.sources['defillama']['base_url']}/protocols"
+                        async with session.get(url) as response2:
+                            if response2.status == 200:
+                                protocols = await response2.json()
+                                for protocol in protocols:
+                                    if 'compound' in protocol.get('name', '').lower() and 'v3' in protocol.get('name', '').lower():
+                                        return protocol.get('tvl', 2.5e9)
+                        return 2.5e9  # Default fallback
+                        
+        except Exception as e:
+            logger.warning(f"Failed to get Compound TVL: {e}")
+            return 2.5e9  # Default 2.5B TVL
     
     async def _store_market_data(self, market_data: Dict[str, Any]):
         """Store market data in Firestore and BigQuery"""

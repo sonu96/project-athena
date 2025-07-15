@@ -1,0 +1,104 @@
+[
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "Time when the position performance was recorded"
+  },
+  {
+    "name": "position_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Unique identifier for the position"
+  },
+  {
+    "name": "protocol",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "DeFi protocol name (e.g., aerodrome, moonwell)"
+  },
+  {
+    "name": "chain",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Blockchain network (e.g., base, arbitrum)"
+  },
+  {
+    "name": "pool_address",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Smart contract address of the pool"
+  },
+  {
+    "name": "pool_name",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Human-readable pool name (e.g., USDC-USDT)"
+  },
+  {
+    "name": "advertised_apy",
+    "type": "FLOAT64",
+    "mode": "NULLABLE",
+    "description": "APY advertised by the protocol"
+  },
+  {
+    "name": "realized_apy",
+    "type": "FLOAT64",
+    "mode": "NULLABLE",
+    "description": "Actual APY achieved"
+  },
+  {
+    "name": "position_duration_hours",
+    "type": "FLOAT64",
+    "mode": "NULLABLE",
+    "description": "How long the position was held in hours"
+  },
+  {
+    "name": "total_earned_usd",
+    "type": "FLOAT64",
+    "mode": "NULLABLE",
+    "description": "Total earnings in USD"
+  },
+  {
+    "name": "total_gas_spent_usd",
+    "type": "FLOAT64",
+    "mode": "NULLABLE",
+    "description": "Total gas costs in USD"
+  },
+  {
+    "name": "net_profit_usd",
+    "type": "FLOAT64",
+    "mode": "NULLABLE",
+    "description": "Net profit after all costs"
+  },
+  {
+    "name": "exit_reason",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Reason for exiting the position"
+  },
+  {
+    "name": "market_condition",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Market condition during the position"
+  },
+  {
+    "name": "emotional_state_on_entry",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Agent's emotional state when entering"
+  },
+  {
+    "name": "emotional_state_on_exit",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Agent's emotional state when exiting"
+  },
+  {
+    "name": "memory_references",
+    "type": "STRING",
+    "mode": "REPEATED",
+    "description": "Memory IDs that influenced this position"
+  }
+]

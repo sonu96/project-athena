@@ -21,24 +21,33 @@ class FirestoreClient:
         self.db = gcp_config.firestore_client
         self.collections = {
             'treasury': 'agent_data_treasury',
-            'market_conditions': 'agent_data_market_conditions',
+            'active_positions': 'agent_data_active_positions',
+            'yield_opportunities': 'agent_data_yield_opportunities',
+            'bridge_opportunities': 'agent_data_bridge_opportunities',
             'protocols': 'agent_data_protocols',
             'decisions': 'agent_data_decisions',
             'costs': 'agent_data_costs',
+            'risk_alerts': 'agent_data_risk_alerts',
+            'gas_prices': 'agent_data_gas_prices',
             'system_logs': 'agent_data_system_logs'
         }
     
     async def initialize_database(self) -> bool:
         """Initialize database with default documents"""
         try:
-            # Initialize treasury with starting balance
+            # Initialize treasury with enhanced DeFi fields
             treasury_doc = {
+                'agent_id': settings.agent_id,
                 'balance_usd': 100.0,  # Starting seed money
+                'balance_btc': 0.0,
+                'total_value_locked': 0.0,
+                'total_rewards_pending': 0.0,
                 'daily_burn_rate': 0.0,
                 'days_until_bankruptcy': 999,
                 'emotional_state': 'stable',
                 'risk_tolerance': 0.5,
                 'confidence_level': 0.5,
+                'survival_mode_active': False,
                 'created_at': firestore.SERVER_TIMESTAMP,
                 'last_updated': firestore.SERVER_TIMESTAMP,
                 'initialization': True
@@ -46,15 +55,27 @@ class FirestoreClient:
             
             self.db.collection(self.collections['treasury']).document('current_state').set(treasury_doc)
             
-            # Initialize market conditions
-            market_doc = {
-                'condition_type': 'unknown',
-                'confidence_score': 0.0,
-                'last_updated': firestore.SERVER_TIMESTAMP,
-                'initialization': True
+            # Initialize empty positions collection
+            self.db.collection(self.collections['active_positions']).document('_init').set({
+                'initialization': True,
+                'timestamp': firestore.SERVER_TIMESTAMP
+            })
+            
+            # Initialize yield opportunities collection
+            self.db.collection(self.collections['yield_opportunities']).document('_init').set({
+                'initialization': True,
+                'timestamp': firestore.SERVER_TIMESTAMP
+            })
+            
+            # Initialize gas prices tracking
+            gas_doc = {
+                'base': {'price_gwei': 0.0, 'updated': firestore.SERVER_TIMESTAMP},
+                'ethereum': {'price_gwei': 0.0, 'updated': firestore.SERVER_TIMESTAMP},
+                'arbitrum': {'price_gwei': 0.0, 'updated': firestore.SERVER_TIMESTAMP},
+                'last_updated': firestore.SERVER_TIMESTAMP
             }
             
-            self.db.collection(self.collections['market_conditions']).document('current').set(market_doc)
+            self.db.collection(self.collections['gas_prices']).document('current').set(gas_doc)
             
             # Create initial system log
             self.db.collection(self.collections['system_logs']).add({
@@ -251,3 +272,107 @@ class FirestoreClient:
         except Exception as e:
             logger.error(f"❌ Error logging system event: {e}")
             return False
+    
+    # ========== YIELD OPTIMIZATION METHODS ==========
+    
+    async def add_position(self, position_data: Dict[str, Any]) -> str:
+        """Add a new active position"""
+        try:
+            position_data['timestamp'] = firestore.SERVER_TIMESTAMP
+            doc_ref = self.db.collection(self.collections['active_positions']).add(position_data)
+            return doc_ref[1].id
+        except Exception as e:
+            logger.error(f"❌ Error adding position: {e}")
+            return ""
+    
+    async def update_position(self, position_id: str, updates: Dict[str, Any]) -> bool:
+        """Update an existing position"""
+        try:
+            updates['last_updated'] = firestore.SERVER_TIMESTAMP
+            self.db.collection(self.collections['active_positions']).document(position_id).update(updates)
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error updating position: {e}")
+            return False
+    
+    async def get_active_positions(self) -> List[Dict[str, Any]]:
+        """Get all active positions"""
+        try:
+            positions = []
+            docs = self.db.collection(self.collections['active_positions']).where(
+                'position_id', '!=', '_init'
+            ).stream()
+            
+            for doc in docs:
+                position = doc.to_dict()
+                position['id'] = doc.id
+                positions.append(position)
+            
+            return positions
+        except Exception as e:
+            logger.error(f"❌ Error getting active positions: {e}")
+            return []
+    
+    async def add_yield_opportunity(self, opportunity: Dict[str, Any]) -> str:
+        """Add a new yield opportunity"""
+        try:
+            opportunity['discovered_at'] = firestore.SERVER_TIMESTAMP
+            doc_ref = self.db.collection(self.collections['yield_opportunities']).add(opportunity)
+            return doc_ref[1].id
+        except Exception as e:
+            logger.error(f"❌ Error adding yield opportunity: {e}")
+            return ""
+    
+    async def get_top_yield_opportunities(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get top yield opportunities by priority score"""
+        try:
+            opportunities = []
+            docs = self.db.collection(self.collections['yield_opportunities']).order_by(
+                'priority_score', direction=firestore.Query.DESCENDING
+            ).limit(limit).stream()
+            
+            for doc in docs:
+                if doc.id != '_init':
+                    opp = doc.to_dict()
+                    opp['id'] = doc.id
+                    opportunities.append(opp)
+            
+            return opportunities
+        except Exception as e:
+            logger.error(f"❌ Error getting yield opportunities: {e}")
+            return []
+    
+    async def add_bridge_opportunity(self, bridge_opp: Dict[str, Any]) -> str:
+        """Add a cross-chain bridge opportunity"""
+        try:
+            bridge_opp['discovered_at'] = firestore.SERVER_TIMESTAMP
+            doc_ref = self.db.collection(self.collections['bridge_opportunities']).add(bridge_opp)
+            return doc_ref[1].id
+        except Exception as e:
+            logger.error(f"❌ Error adding bridge opportunity: {e}")
+            return ""
+    
+    async def update_gas_prices(self, chain: str, price_gwei: float) -> bool:
+        """Update gas price for a specific chain"""
+        try:
+            update_data = {
+                f'{chain}.price_gwei': price_gwei,
+                f'{chain}.updated': firestore.SERVER_TIMESTAMP,
+                'last_updated': firestore.SERVER_TIMESTAMP
+            }
+            self.db.collection(self.collections['gas_prices']).document('current').update(update_data)
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error updating gas prices: {e}")
+            return False
+    
+    async def add_risk_alert(self, alert: Dict[str, Any]) -> str:
+        """Add a new risk alert"""
+        try:
+            alert['timestamp'] = firestore.SERVER_TIMESTAMP
+            alert['acknowledged'] = False
+            doc_ref = self.db.collection(self.collections['risk_alerts']).add(alert)
+            return doc_ref[1].id
+        except Exception as e:
+            logger.error(f"❌ Error adding risk alert: {e}")
+            return ""

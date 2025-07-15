@@ -12,6 +12,7 @@ from .treasury import TreasuryManager
 from .memory_manager import MemoryManager
 from .market_detector import MarketConditionDetector
 from .nervous_system import NervousSystem
+from .position_manager import PositionManager
 from ..data.firestore_client import FirestoreClient
 from ..data.bigquery_client import BigQueryClient
 from ..data.market_data_collector import MarketDataCollector
@@ -19,6 +20,7 @@ from ..integrations.mem0_integration import Mem0Integration
 from ..integrations.cdp_integration import CDPIntegration
 from ..integrations.llm_workflow_integration import LLMWorkflowIntegration
 from ..workflows.state import WorkflowConfig
+from ..workflows.yield_optimization_flow import create_yield_optimization_workflow
 from ..config.settings import settings
 from ..config.langsmith_config import enable_tracing, monitor_workflow
 
@@ -39,6 +41,8 @@ class DeFiAgent:
         self.cdp: Optional[CDPIntegration] = None
         self.llm_workflows: Optional[LLMWorkflowIntegration] = None
         self.nervous_system: Optional[NervousSystem] = None
+        self.position_manager = None  # V1 addition
+        self.yield_optimization_workflow = None  # V1 addition
         
         # Integrations
         self.mem0: Optional[Mem0Integration] = None
@@ -123,6 +127,17 @@ class DeFiAgent:
             )
             self.llm_workflows = LLMWorkflowIntegration(workflow_config)
             
+            # Initialize V1 components
+            self.position_manager = PositionManager(self.cdp, self.firestore)
+            await self.position_manager.initialize()
+            
+            # Create yield optimization workflow
+            self.yield_optimization_workflow = create_yield_optimization_workflow(
+                self.position_manager,
+                self.cdp,
+                self.memory_manager
+            )
+            
             # Request testnet tokens
             await self.cdp.get_testnet_tokens()
             
@@ -183,12 +198,23 @@ class DeFiAgent:
                     self.metrics['memories_formed'] = len(consciousness_state.get('recent_memories', []))
                     self.metrics['total_costs'] = consciousness_state.get('total_cost', 0.0)
                     
+                    # V1: Check if we should run yield optimization
+                    if consciousness_state['cycle_count'] % 4 == 0:  # Every 4 cycles (~4 hours)
+                        await self._check_yield_optimization(consciousness_state)
+                    
                     # Log consciousness state periodically
                     if consciousness_state['cycle_count'] % 10 == 0:
                         state_summary = self.nervous_system.get_current_state()
                         logger.info(f"🧠 Consciousness state: {state_summary['emotional_state']}, "
                                   f"Mode: {state_summary['operational_mode']}, "
                                   f"Goal: {state_summary['current_goal']}")
+                    
+                    # V1: Collect gas data every 5 minutes (or every cycle if interval > 5 min)
+                    await self._collect_gas_data_if_needed()
+                    
+                    # V1: Collect Compound data every 15 minutes
+                    if consciousness_state['cycle_count'] % 3 == 0:  # ~15 min if cycles are 5 min
+                        await self._collect_compound_data()
                     
                     # Generate daily summary based on cycles (24 cycles = ~1 day at normal rate)
                     if consciousness_state['cycle_count'] % 24 == 0 and consciousness_state['cycle_count'] > 0:
@@ -601,6 +627,99 @@ class DeFiAgent:
                 )
         except Exception as e:
             logger.warning(f"Cleanup warning: {e}")
+    
+    # V1 Methods for Yield Optimization
+    
+    async def _check_yield_optimization(self, consciousness_state: Dict[str, Any]):
+        """Check if we should run yield optimization"""
+        try:
+            logger.info("💰 Checking yield optimization...")
+            
+            # Skip if no position
+            position_data = self.position_manager.get_position_metrics()
+            if position_data["amount_supplied"] == 0:
+                logger.info("📊 No active position to optimize")
+                return
+            
+            # Update consciousness with position data
+            consciousness_state["position_data"] = position_data
+            consciousness_state["yield_metrics"] = {
+                "current_apy": position_data["current_apy"],
+                "pending_rewards": position_data["pending_rewards"],
+                "net_profit": position_data["net_profit"]
+            }
+            
+            # Prepare yield optimization state
+            from ..workflows.yield_optimization_flow import YieldOptimizationState
+            
+            yield_state = YieldOptimizationState(
+                emotional_state=consciousness_state["emotional_state"],
+                treasury_balance=consciousness_state["treasury_balance"],
+                days_until_bankruptcy=consciousness_state["days_until_bankruptcy"],
+                risk_tolerance=consciousness_state.get("risk_tolerance", 0.5),
+                position_data={},
+                pending_rewards=0.0,
+                current_apy=0.0,
+                gas_price={},
+                gas_timing_memories=[],
+                should_compound=False,
+                compound_reasoning="",
+                required_multiplier=2.0,
+                expected_net_gain=0.0,
+                execution_result={},
+                costs_incurred=[],
+                errors=[],
+                warnings=[]
+            )
+            
+            # Run yield optimization workflow
+            result = await self.yield_optimization_workflow.ainvoke(yield_state)
+            
+            # Update consciousness with results
+            if result.get("execution_result", {}).get("success"):
+                consciousness_state["compound_history"].append({
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "amount": result["execution_result"].get("amount_compounded", 0),
+                    "net_gain": result["execution_result"].get("net_gain", 0),
+                    "emotional_state": consciousness_state["emotional_state"]
+                })
+                
+                # Keep only last 10 compound events
+                consciousness_state["compound_history"] = consciousness_state["compound_history"][-10:]
+            
+            # Track costs
+            for cost in result.get("costs_incurred", []):
+                await self.treasury.track_cost(
+                    cost["amount"],
+                    cost["type"],
+                    cost.get("description", "Yield optimization cost")
+                )
+            
+        except Exception as e:
+            logger.error(f"❌ Yield optimization check failed: {e}")
+    
+    async def _collect_gas_data_if_needed(self):
+        """Collect gas data every 5 minutes"""
+        try:
+            # Simple time-based check (could be more sophisticated)
+            now = datetime.now(timezone.utc)
+            if not hasattr(self, '_last_gas_collection'):
+                self._last_gas_collection = now - timedelta(minutes=10)
+            
+            if (now - self._last_gas_collection).total_seconds() >= 300:  # 5 minutes
+                await self.market_data_collector.collect_gas_data(self.cdp)
+                self._last_gas_collection = now
+                
+        except Exception as e:
+            logger.error(f"❌ Gas data collection failed: {e}")
+    
+    async def _collect_compound_data(self):
+        """Collect Compound V3 data"""
+        try:
+            await self.market_data_collector.collect_compound_data(self.cdp)
+            
+        except Exception as e:
+            logger.error(f"❌ Compound data collection failed: {e}")
 
 
 # Convenience function to run the agent

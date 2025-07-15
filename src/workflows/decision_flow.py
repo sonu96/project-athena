@@ -465,6 +465,7 @@ Remember: Your survival depends on making smart decisions with limited resources
                 "expected_outcome": "Unknown"
             }
     
+    @traceable(name="workflow_llm_call", metadata={"workflow": "decision_flow"})
     async def _call_llm(self, model: str, prompt: str, context: str = "") -> Dict[str, Any]:
         """Call LLM with cost tracking"""
         try:

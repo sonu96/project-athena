@@ -31,7 +31,9 @@ class MemoryManager:
             'emotional_state_change': True,     # Always form memory on emotional changes
             'market_volatility_threshold': 0.05, # 5% market swing triggers memory
             'decision_confidence_threshold': 0.8, # High confidence decisions remembered
-            'failure_events': True              # Always remember failures
+            'failure_events': True,              # Always remember failures
+            'survival_mode_active': True,       # Always remember survival mode events
+            'compound_success': True            # Always remember successful compounds
         }
         
         # Experience buffer for pattern detection
@@ -90,7 +92,7 @@ class MemoryManager:
         exp_type = experience.get("type", "")
         
         # Always remember certain types
-        if exp_type in ["survival_event", "emotional_change", "critical_decision"]:
+        if exp_type in ["survival_event", "emotional_change", "critical_decision", "compound_success", "desperate_mode"]:
             return True
         
         # Check treasury changes
@@ -378,3 +380,136 @@ class MemoryManager:
             'total_memories': self.learning_stats['memories_formed'],
             'patterns_found': self.learning_stats['patterns_identified']
         }
+    
+    async def search_memories(self, query: str, category: str = None, limit: int = 10) -> List[Dict[str, Any]]:
+        """Search memories by query and optional category"""
+        try:
+            # Use Mem0 to search memories
+            search_results = await self.mem0.query_memories(query, limit=limit)
+            
+            # Filter by category if specified
+            if category:
+                search_results = [
+                    mem for mem in search_results 
+                    if mem.get("metadata", {}).get("category") == category
+                ]
+            
+            self.learning_stats['successful_recalls'] += 1
+            return search_results
+            
+        except Exception as e:
+            logger.error(f"❌ Error searching memories: {e}")
+            self.learning_stats['failed_recalls'] += 1
+            return []
+    
+    async def add_memory(self, content: str, category: str, importance: float, metadata: Dict[str, Any] = None) -> bool:
+        """Add a memory directly with importance and metadata"""
+        try:
+            memory_data = {
+                "content": content,
+                "category": category,
+                "importance": importance,
+                "metadata": metadata or {},
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+            # Add permanent flag for survival memories
+            if category in ["survival_critical", "desperate_decision"] or importance >= 0.9:
+                memory_data["metadata"]["permanent"] = True
+            
+            # Add to Mem0
+            success = await self.mem0.add_memory(memory_data["content"], memory_data["metadata"])
+            
+            if success:
+                # Also store in Firestore for backup
+                await self.firestore.add_document("agent_memories", memory_data)
+                self.learning_stats['memories_formed'] += 1
+                logger.info(f"🧠 Memory formed: {category} - {content[:50]}...")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"❌ Error adding memory: {e}")
+            return False
+    
+    async def form_survival_memory(self, experience: Dict[str, Any], emotional_state: str) -> bool:
+        """Form special survival memories during desperate times"""
+        try:
+            if emotional_state == "desperate":
+                # These memories are PERMANENT and HIGH IMPORTANCE
+                memory_content = f"[SURVIVAL] {experience.get('description', 'Critical survival experience')}"
+                
+                memory_data = {
+                    "content": memory_content,
+                    "category": "survival_critical",
+                    "importance": 1.0,  # Maximum importance
+                    "metadata": {
+                        "treasury_balance": experience.get("treasury_balance", 0),
+                        "days_left": experience.get("days_until_bankruptcy", 0),
+                        "action_taken": experience.get("action", "unknown"),
+                        "outcome": experience.get("outcome", "unknown"),
+                        "emotional_state": emotional_state,
+                        "permanent": True,  # Never forget survival lessons
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                }
+                
+                return await self.add_memory(
+                    memory_data["content"],
+                    memory_data["category"],
+                    memory_data["importance"],
+                    memory_data["metadata"]
+                )
+                
+            elif emotional_state == "cautious" and experience.get("saved_money", False):
+                # Form cost-saving memories
+                memory_content = f"[SAVING] {experience.get('description', 'Cost optimization technique')}"
+                
+                memory_data = {
+                    "content": memory_content,
+                    "category": "cost_optimization",
+                    "importance": 0.8,
+                    "metadata": {
+                        "amount_saved": experience.get("amount_saved", 0),
+                        "technique": experience.get("technique", "unknown"),
+                        "emotional_state": emotional_state,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                }
+                
+                return await self.add_memory(
+                    memory_data["content"],
+                    memory_data["category"],
+                    memory_data["importance"],
+                    memory_data["metadata"]
+                )
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"❌ Error forming survival memory: {e}")
+            return False
+    
+    async def get_survival_memories(self) -> List[Dict[str, Any]]:
+        """Get all survival-critical memories"""
+        try:
+            # Search for survival memories
+            survival_memories = await self.search_memories(
+                "survival critical desperate",
+                category="survival_critical",
+                limit=50
+            )
+            
+            # Sort by importance and timestamp
+            survival_memories.sort(
+                key=lambda m: (
+                    -m.get("metadata", {}).get("importance", 0),
+                    m.get("metadata", {}).get("timestamp", "")
+                )
+            )
+            
+            return survival_memories
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting survival memories: {e}")
+            return []

@@ -9,6 +9,7 @@ import logging
 import json
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
+from langsmith import traceable
 
 from ..config.settings import settings
 
@@ -69,6 +70,7 @@ class LLMIntegration:
             "complex_reasoning": "gpt-4"
         }
     
+    @traceable(name="llm_generate_response", metadata={"integration": "llm"})
     async def generate_response(
         self,
         prompt: str,
@@ -130,6 +132,7 @@ class LLMIntegration:
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
     
+    @traceable(name="anthropic_llm_call", metadata={"provider": "anthropic"})
     async def _generate_anthropic_response(
         self, 
         prompt: str, 
@@ -158,6 +161,7 @@ class LLMIntegration:
             "output_tokens": response.usage.output_tokens
         }
     
+    @traceable(name="openai_llm_call", metadata={"provider": "openai"})
     async def _generate_openai_response(
         self,
         prompt: str,
