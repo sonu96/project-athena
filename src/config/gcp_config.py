@@ -23,6 +23,16 @@ class GCPConfig:
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = settings.google_application_credentials
     
     @property
+    def project_id(self) -> str:
+        """Get GCP project ID"""
+        return settings.gcp_project_id
+    
+    @property
+    def bigquery_dataset(self) -> str:
+        """Get BigQuery dataset name"""
+        return settings.bigquery_dataset
+    
+    @property
     def firestore_client(self) -> firestore.Client:
         """Get or create Firestore client"""
         if not self._firestore_client:

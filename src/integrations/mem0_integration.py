@@ -7,11 +7,18 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import logging
 import json
-from mem0 import Memory
+
+try:
+    from mem0 import Memory
+    MEM0_AVAILABLE = True
+except ImportError:
+    MEM0_AVAILABLE = False
+    Memory = None
 
 from ..config.settings import settings
 from ..data.firestore_client import FirestoreClient
 from ..data.bigquery_client import BigQueryClient
+from .mock_memory import MockMemory
 
 logger = logging.getLogger(__name__)
 
@@ -22,20 +29,63 @@ class Mem0Integration:
     def __init__(self, firestore_client: FirestoreClient, bigquery_client: BigQueryClient):
         self.firestore = firestore_client
         self.bigquery = bigquery_client
-        
-        # Initialize Mem0
-        config = {
-            "vector_store": {
-                "provider": "qdrant",
-                "config": {
-                    "url": settings.vector_db_url,
-                    "api_key": settings.mem0_api_key,
-                }
-            }
-        }
-        
-        self.memory = Memory.from_config(config)
         self.agent_id = settings.agent_id
+        self.memory = None
+        self._initialized = False
+        
+        # Check if we can use Mem0
+        use_mock = False
+        if not MEM0_AVAILABLE:
+            logger.warning("⚠️ Mem0 not installed. Using mock memory system.")
+            use_mock = True
+        elif not settings.openai_api_key or settings.openai_api_key == "your_openai_api_key":
+            logger.warning("⚠️ Mem0 requires OpenAI API key for embeddings. Using mock memory system.")
+            logger.info("   To enable full memory: Set OPENAI_API_KEY in your .env file")
+            use_mock = True
+        
+        if use_mock:
+            self.memory = MockMemory()
+            self._initialized = True
+            return
+        
+        try:
+            # Initialize Mem0 with configuration
+            from mem0.configs.base import MemoryConfig, VectorStoreConfig, LlmConfig, EmbedderConfig
+            
+            config = MemoryConfig(
+                vector_store=VectorStoreConfig(
+                    provider="qdrant",
+                    config={
+                        "collection_name": f"athena_agent_{settings.agent_id}",
+                        "api_key": settings.mem0_api_key,
+                        "url": settings.vector_db_url if settings.vector_db_url != "your_vector_db_url" else None,
+                        "path": "/tmp/athena_qdrant" if settings.vector_db_url == "your_vector_db_url" else None
+                    }
+                ),
+                llm=LlmConfig(
+                    provider="openai",
+                    config={
+                        "model": "gpt-4",
+                        "temperature": 0.1,
+                        "api_key": settings.openai_api_key
+                    }
+                ),
+                embedder=EmbedderConfig(
+                    provider="openai",
+                    config={
+                        "model": "text-embedding-3-small",
+                        "api_key": settings.openai_api_key
+                    }
+                ),
+                history_db_path=f"/tmp/athena_memory_{settings.agent_id}.db"
+            )
+            
+            self.memory = Memory(config)
+            self._initialized = True
+            logger.info("✅ Mem0 memory system initialized")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Mem0: {e}")
+            logger.info("   Agent will run without memory system")
         
         # Memory categories for yield optimization
         self.categories = {
@@ -60,6 +110,10 @@ class Mem0Integration:
     
     async def initialize_memory_system(self) -> bool:
         """Initialize memory system with basic agent knowledge"""
+        if not self.memory:
+            logger.warning("Memory system not available - skipping initialization")
+            return True  # Return True so agent can continue without memory
+        
         try:
             # Core survival knowledge
             survival_memories = [
@@ -214,10 +268,17 @@ class Mem0Integration:
             if 'timestamp' not in metadata:
                 metadata['timestamp'] = datetime.now(timezone.utc).isoformat()
             
-            # Add memory to Mem0
-            result = self.memory.add(
-                messages=content,
-                user_id=self.agent_id,
+            # Add memory to Mem0 or MockMemory
+            if isinstance(self.memory, MockMemory):
+                result = await self.memory.add(
+                    content=content,
+                    user_id=self.agent_id,
+                    metadata=metadata
+                )
+            else:
+                result = self.memory.add(
+                    messages=content,
+                    user_id=self.agent_id,
                 metadata=metadata
             )
             

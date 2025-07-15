@@ -10,8 +10,15 @@ from typing import Dict, Any, List
 
 from langgraph.graph import StateGraph, START, END
 from langsmith import traceable
-from anthropic import AsyncAnthropic
-from openai import AsyncOpenAI
+try:
+    from anthropic import AsyncAnthropic
+except ImportError:
+    AsyncAnthropic = None
+
+try:
+    from openai import AsyncOpenAI
+except ImportError:
+    AsyncOpenAI = None
 
 from .state import DecisionState, WorkflowConfig
 from ..config.settings import settings
@@ -24,8 +31,8 @@ class DecisionNodes:
     
     def __init__(self, config: WorkflowConfig):
         self.config = config
-        self.anthropic_client = AsyncAnthropic(api_key=settings.anthropic_api_key) if settings.anthropic_api_key else None
-        self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        self.anthropic_client = AsyncAnthropic(api_key=settings.anthropic_api_key) if AsyncAnthropic and settings.anthropic_api_key else None
+        self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key) if AsyncOpenAI and settings.openai_api_key else None
         
         # Cost tracking
         self.model_costs = {

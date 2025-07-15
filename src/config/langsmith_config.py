@@ -182,9 +182,14 @@ def monitor_workflow(workflow_name: str):
             try:
                 result = await func(*args, **kwargs)
                 duration = time.time() - start_time
-                cost = sum(cost.get("amount", 0) for cost in result.get("costs_incurred", []))
                 
-                trace_workflow_execution(workflow_name, kwargs, result, duration, cost)
+                # Handle different result types
+                if isinstance(result, dict):
+                    cost = sum(cost.get("amount", 0) for cost in result.get("costs_incurred", []))
+                    trace_workflow_execution(workflow_name, kwargs, result, duration, cost)
+                else:
+                    # For non-dict results (like bool), just trace without cost
+                    trace_workflow_execution(workflow_name, kwargs, {"result": result}, duration, 0)
                 
                 return result
                 

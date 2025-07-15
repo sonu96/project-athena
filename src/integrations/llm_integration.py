@@ -7,11 +7,10 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Literal
 import logging
 import json
-from anthropic import AsyncAnthropic
-from openai import AsyncOpenAI
 from langsmith import traceable
 
 from ..config.settings import settings
+from .llm_factory import llm_factory, get_llm_response
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +23,19 @@ class LLMIntegration:
         self.anthropic_client = None
         self.openai_client = None
         
-        if settings.anthropic_api_key:
-            self.anthropic_client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        try:
+            if settings.anthropic_api_key:
+                from anthropic import AsyncAnthropic
+                self.anthropic_client = AsyncAnthropic(api_key=settings.anthropic_api_key)
+        except ImportError:
+            logger.warning("Anthropic SDK not available")
         
-        if settings.openai_api_key:
-            self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+        try:
+            if settings.openai_api_key:
+                from openai import AsyncOpenAI
+                self.openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+        except ImportError:
+            logger.warning("OpenAI SDK not available")
         
         # Model configurations with cost per token
         self.models = {

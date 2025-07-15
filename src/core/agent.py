@@ -104,8 +104,11 @@ class DeFiAgent:
             await self.firestore.initialize_database()
             await self.bigquery.initialize_dataset()
             
-            # Initialize integrations
-            self.mem0 = Mem0Integration(self.firestore, self.bigquery)
+            # Initialize integrations - use Mem0 Cloud
+            from ..integrations.mem0_cloud import Mem0CloudIntegration
+            self.mem0 = Mem0CloudIntegration(self.firestore, self.bigquery)
+            
+            # Initialize memory system
             await self.mem0.initialize_memory_system()
             
             # Initialize CDP wallet
@@ -247,7 +250,7 @@ class DeFiAgent:
             logger.info(f"👁️ Starting observation cycle #{self.observation_count + 1}")
             
             # Collect market data
-            market_result = await self.market_data_collector.collect_comprehensive_market_data()
+            market_result = await self.market_data_collector.collect_comprehensive_market_data(self.cdp)
             
             if not market_result['success']:
                 logger.warning(f"Market data collection failed: {market_result.get('error')}")

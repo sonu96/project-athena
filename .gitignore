@@ -34,6 +34,7 @@ htmlcov/
 service-account-key.json
 gcp-credentials.json
 *.key
+credentials/
 
 # Logs
 logs/
@@ -68,6 +69,9 @@ dist/
 # CDP Wallet
 wallet_data/
 *.wallet
+
+# CDP Wallet Data
+wallet_data/
 
 # Memory database
 vector_db/

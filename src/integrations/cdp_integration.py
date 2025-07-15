@@ -14,8 +14,9 @@ try:
     CDP_AVAILABLE = True
 except ImportError:
     CDP_AVAILABLE = False
-    logger = logging.getLogger(__name__)
-    logger.warning("CDP SDK not available. Python 3.10+ required. Agent will run in simulation mode.")
+    Cdp = None
+    Wallet = None
+    WalletData = None
 
 from ..config.settings import settings
 
@@ -29,7 +30,7 @@ class CDPIntegration:
         self.cdp = None
         self.wallet = None
         self.network = settings.network  # base-sepolia for testnet
-        self.wallet_file = "wallet_data/athena_wallet.json"
+        self.wallet_file = "wallet_data/athena_production_wallet.json"
         
     async def initialize_wallet(self) -> bool:
         """Initialize or load existing wallet"""
@@ -576,9 +577,10 @@ class CDPIntegration:
                     self._simulation_balance = wallet_data.get("balance", settings.agent_starting_treasury)
                     self.wallet = type('MockWallet', (), {
                         'default_address': wallet_data.get("address", "0x" + "a" * 40),
-                        'network': self.network
+                        'network': self.network,
+                        'private_key': wallet_data.get("private_key", None)
                     })()
-                logger.info(f"✅ Loaded simulation wallet: {self.wallet.default_address}")
+                logger.info(f"✅ Loaded wallet: {self.wallet.default_address}")
             else:
                 # Create new simulated wallet
                 os.makedirs(os.path.dirname(self.wallet_file), exist_ok=True)

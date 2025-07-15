@@ -10,6 +10,7 @@ from google.cloud.firestore_v1 import FieldFilter
 import logging
 
 from ..config.gcp_config import gcp_config
+from ..config.settings import settings
 
 logger = logging.getLogger(__name__)
 
