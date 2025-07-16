@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.core.agent import AthenaAgent
-from src.data.bigquery_client import BigQueryClient
+from src.database.bigquery_client import BigQueryClient
 from src.integrations.mem0_cloud import Mem0CloudClient
 from src.workflows.cognitive_loop import create_cognitive_workflow
 from src.workflows.state import ConsciousnessState
