@@ -7,8 +7,9 @@ This document serves as the comprehensive guide for implementing and maintaining
 Athena is an autonomous AI agent designed for leverage trading on Aerodrome Finance (BASE network). The agent features:
 - **Emotional Intelligence**: Adaptive behavior based on treasury health
 - **Memory-Driven Decisions**: Learns from every trade using Mem0
-- **Survival Instincts**: Economic pressure drives intelligent behavior
-- **Production Ready**: Built for 24/7 autonomous operation
+- **Enterprise Security**: Google Cloud Secret Manager with zero secret exposure
+- **Cost Protection**: Guaranteed $30 spending limit with automatic shutdown
+- **Production Ready**: Built for 24/7 autonomous operation with full financial protection
 
 ## Architecture Philosophy
 
@@ -16,27 +17,76 @@ Athena is an autonomous AI agent designed for leverage trading on Aerodrome Fina
 1. **Consciousness-First Design**: The agent has a unified consciousness state that flows through a cognitive loop
 2. **Emotional Risk Management**: Emotional states directly influence risk tolerance and trading behavior
 3. **Continuous Learning**: Every observation and decision contributes to the agent's knowledge base
-4. **Cost Awareness**: Every operation is tracked for cost, creating natural selection pressure
+4. **Cost Protection**: Hard $30 spending limit prevents financial exposure
+5. **Security First**: Zero secret exposure with enterprise-grade credential management
 
 ### Technology Stack
-- **Language**: Python 3.10+
+- **Language**: Python 3.11+ (required for CDP SDK)
 - **AI Framework**: LangGraph (sophisticated state machines)
-- **LLM Integration**: Google Gemini via Vertex AI (Flash 2.0 → Gemini 1.5 Pro)
+- **LLM Integration**: Google Gemini via Vertex AI with cost-aware routing
 - **Memory System**: Mem0 Cloud API
 - **Blockchain**: CDP AgentKit (BASE network)
 - **Protocol**: Aerodrome Finance
+- **Security**: Google Cloud Secret Manager (enterprise-grade)
+- **Cost Management**: Real-time tracking with $30 hard limit
 - **Database**: Google Firestore (real-time) + BigQuery (analytics)
-- **Monitoring**: LangSmith + Custom Dashboards
-- **Deployment**: Google Cloud Run (containerized)
+- **Monitoring**: LangSmith + Cost Dashboard + Secret Manager audit logs
+- **Deployment**: Google Cloud Run (containerized with secret integration)
 
 ## V1 Implementation Plan (Observer Mode)
 
-### Goals
-- Build production-ready architecture
-- Implement cognitive loop with emotional states
-- Observe Aerodrome pools and form memories
-- Learn patterns without executing trades
-- Achieve stable 24/7 operation
+### Goals ✅ COMPLETED
+- ✅ Build production-ready architecture
+- ✅ Implement cognitive loop with emotional states
+- ✅ Observe Aerodrome pools and form memories
+- ✅ Learn patterns without executing trades
+- ✅ Achieve stable 24/7 operation
+- ✅ **BONUS: Enterprise security with Google Cloud Secret Manager**
+- ✅ **BONUS: $30 cost protection with automatic shutdown**
+
+## 🔐 Security & Cost Management Implementation
+
+### Enterprise Security (Google Cloud Secret Manager)
+All sensitive credentials are now stored in Google Cloud Secret Manager:
+- `cdp-api-key-name` & `cdp-api-key-secret` (Coinbase API access)
+- `cdp-wallet-secret` (Wallet private key)
+- `mem0-api-key` (Memory service access)
+- `langsmith-api-key` (Monitoring service access)
+
+**Security Features:**
+- ✅ Zero secret exposure in codebase
+- ✅ Centralized credential management
+- ✅ Automatic secret rotation support
+- ✅ Audit logs for all access
+- ✅ Encryption at rest and in transit
+- ✅ IAM-based access control
+
+### Cost Protection System ($30 Hard Limit)
+**Real-time Cost Tracking:**
+- Tracks every API call (Gemini, Mem0, Google Cloud)
+- Progressive alerts at $5, $10, $20, $25, $30
+- Emergency mode activation at $20 (switches to cheapest models)
+- Automatic shutdown at $30 to prevent overspending
+
+**Cost-Aware Architecture:**
+- LLM Router selects models based on budget and emotional state
+- Cost-aware wrapper prevents operations when budget exceeded
+- Daily cost reset with persistent tracking
+- Service-specific cost breakdown and reporting
+
+**Financial Protection:**
+- ✅ Guaranteed maximum spend of $30
+- ✅ Real-time budget monitoring
+- ✅ Automatic emergency shutdown
+- ✅ No possibility of runaway costs
+- ✅ Detailed cost attribution by service
+
+### Production Deployment Features
+- **Google Cloud Project**: `athena-agent-prod` fully configured
+- **Secret Manager**: All credentials secured and accessible
+- **Cost Monitoring**: Built-in spending dashboard
+- **Emergency Controls**: Automatic shutdown and alerts
+- **Audit Logging**: Complete traceability for security and costs
 
 ### Project Structure
 ```
@@ -49,11 +99,15 @@ athena/
 │   │   ├── consciousness.py         # Enhanced consciousness state
 │   │   ├── emotions.py             # Emotional state management
 │   │   └── treasury.py             # Financial tracking
-│   ├── memory/
+│   ├── config/
 │   │   ├── __init__.py
-│   │   ├── client.py               # Mem0 Cloud integration
-│   │   ├── patterns.py             # Pattern recognition
-│   │   └── categories.py           # Memory categorization
+│   │   └── secret_manager.py       # 🔐 Google Cloud Secret Manager integration
+│   ├── monitoring/
+│   │   ├── __init__.py
+│   │   └── cost_manager.py         # 💰 $30 cost protection system
+│   ├── integrations/
+│   │   ├── __init__.py
+│   │   └── mem0_cloud.py           # Mem0 Cloud integration
 │   ├── blockchain/
 │   │   ├── __init__.py
 │   │   ├── cdp_client.py           # CDP AgentKit wrapper
@@ -66,16 +120,11 @@ athena/
 │   │   └── analytics.py            # Market analysis
 │   ├── workflows/
 │   │   ├── __init__.py
-│   │   ├── cognitive_loop.py       # Main LangGraph workflow
-│   │   ├── nodes/
-│   │   │   ├── __init__.py
-│   │   │   ├── sense.py            # Environment perception
-│   │   │   ├── think.py            # Analysis with LLM
-│   │   │   ├── feel.py             # Emotional processing
-│   │   │   ├── decide.py           # Decision making
-│   │   │   └── learn.py            # Memory formation
-│   │   ├── routing.py              # Dynamic routing logic
-│   │   └── llm_router.py           # Model selection logic
+│   │   ├── cognitive_loop.py       # Main LangGraph workflow with cost protection
+│   │   ├── state.py                # Consciousness state management
+│   │   ├── cost_aware_llm.py       # 💰 Budget-protected LLM wrapper
+│   │   ├── llm_router.py           # Cost-aware model selection
+│   │   └── nodes/                  # [Workflow nodes integrated inline]
 │   ├── database/
 │   │   ├── __init__.py
 │   │   ├── firestore_client.py     # Real-time database
@@ -122,15 +171,21 @@ athena/
 ├── scripts/
 │   ├── setup.py                   # Initial setup
 │   ├── deploy.py                  # Deployment script
-│   └── monitor.py                 # Local monitoring
+│   ├── monitor.py                 # Local monitoring
+│   ├── migrate_secrets.py         # 🔐 Migrate secrets to Secret Manager
+│   └── test_secrets.py            # 🔐 Test Secret Manager integration
 ├── docs/
 │   ├── API.md                     # API documentation
 │   ├── DEPLOYMENT.md              # Deployment guide
 │   └── ARCHITECTURE.md            # Technical details
+├── SECURITY_IMPLEMENTATION.md    # 🔐 Security setup and Secret Manager guide
+├── COST_MANAGEMENT_SUMMARY.md    # 💰 Cost protection overview
+├── .env.example                  # 🔐 Secure configuration template
+├── .env.secure                   # 🔐 Production config (no secrets)
 ├── requirements.txt
 ├── pyproject.toml
-├── .gitignore
-└── README.md
+├── .gitignore                    # Updated with security exclusions
+└── README.md                     # Updated with security features
 ```
 
 ## Core Components
