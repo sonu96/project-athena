@@ -10,9 +10,10 @@ from typing import Tuple, Dict, Any, Optional
 from langchain_google_vertexai import ChatVertexAI
 from langchain_core.language_models import BaseChatModel
 
-from ..core.consciousness import ConsciousnessState
+from .state import ConsciousnessState
 from ..core.emotions import EmotionalEngine, EmotionalState
 from ..config import settings
+from ..monitoring.cost_manager import cost_manager
 
 logger = logging.getLogger(__name__)
 
@@ -50,8 +51,18 @@ class LLMRouter:
         Returns:
             Tuple of (model, config)
         """
+        # Check if we're in shutdown mode
+        if cost_manager.shutdown_triggered:
+            logger.error("🛑 Cannot create LLM - Cost limit exceeded, services shut down")
+            raise RuntimeError("Services shut down due to cost limit")
+        
         # Get emotional state
         emotional_state = state.emotional_state
+        
+        # Adjust model based on emergency mode
+        if cost_manager.emergency_mode:
+            logger.warning("🚨 Emergency mode: Forcing cheapest model")
+            emotional_state = EmotionalState.DESPERATE
         
         # Get model config
         model_config = EmotionalEngine.LLM_MODELS[emotional_state].copy()
@@ -146,3 +157,67 @@ class LLMRouter:
             "cost_per_1k_tokens": config["cost_per_1k"],
             "estimated_hourly_cost": self.estimate_cost(state, 10000)  # 10k tokens/hour estimate
         }
+    
+    async def track_llm_cost(
+        self,
+        state: ConsciousnessState,
+        input_tokens: int,
+        output_tokens: int,
+        operation: str = "llm_call"
+    ) -> bool:
+        """
+        Track actual LLM usage cost
+        
+        Args:
+            state: Current consciousness state
+            input_tokens: Number of input tokens
+            output_tokens: Number of output tokens  
+            operation: Description of the operation
+            
+        Returns:
+            True if operation can continue, False if shutdown
+        """
+        total_tokens = input_tokens + output_tokens
+        config = EmotionalEngine.LLM_MODELS[state.emotional_state]
+        cost_per_1k = config["cost_per_1k"]
+        
+        # Calculate actual cost
+        actual_cost = (total_tokens / 1000) * cost_per_1k
+        
+        # Track the cost
+        can_continue = await cost_manager.add_cost(
+            amount=actual_cost,
+            service="gemini_api",
+            operation=operation,
+            metadata={
+                "model": config["model"],
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+                "emotional_state": state.emotional_state.value
+            }
+        )
+        
+        logger.info(
+            f"💸 LLM Cost: ${actual_cost:.6f} "
+            f"({total_tokens} tokens, {config['model']})"
+        )
+        
+        return can_continue
+    
+    def can_afford_operation(self, state: ConsciousnessState, estimated_tokens: int = 1000) -> bool:
+        """
+        Check if we can afford an LLM operation
+        
+        Args:
+            state: Current consciousness state
+            estimated_tokens: Estimated token count
+            
+        Returns:
+            True if we can afford the operation
+        """
+        if cost_manager.shutdown_triggered:
+            return False
+            
+        estimated_cost = self.estimate_cost(state, estimated_tokens)
+        return cost_manager.can_afford(estimated_cost)

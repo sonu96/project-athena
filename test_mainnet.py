@@ -38,11 +38,7 @@ async def test_mainnet_connection():
     try:
         # Initialize agent
         print("1. Initializing Athena agent...")
-        agent = AthenaAgent(
-            agent_id=os.getenv("AGENT_ID", "athena-mainnet-test"),
-            network=MAINNET_CONFIG["NETWORK_NAME"],
-            config=MAINNET_CONFIG
-        )
+        agent = AthenaAgent()
         
         # Test CDP connection
         print("\n2. Testing CDP AgentKit connection to BASE mainnet...")
@@ -71,12 +67,12 @@ async def test_mainnet_connection():
         }
         
         # Store observation
-        await bq_client.store_pool_observation(test_observation)
+        await bq_client.log_pool_observation("athena-mainnet-test", test_observation)
         print("   ✅ BigQuery write successful")
         
-        # Query recent observations
-        recent_obs = await bq_client.get_recent_observations(limit=5)
-        print(f"   📊 Found {len(recent_obs)} recent observations")
+        # Query recent data
+        query_result = await bq_client.query("SELECT COUNT(*) as count FROM pool_observations WHERE DATE(timestamp) = CURRENT_DATE()")
+        print(f"   📊 BigQuery query successful")
         
         # Test Mem0 connection
         print("\n4. Testing Mem0 memory system...")
@@ -84,10 +80,9 @@ async def test_mainnet_connection():
         
         # Create test memory
         test_memory = await memory_client.add_memory(
-            f"Mainnet test at {datetime.utcnow().isoformat()}. Wallet: {wallet_address}",
-            user_id=agent.agent_id,
+            content=f"Mainnet test at {datetime.utcnow().isoformat()}. Wallet: {wallet_address}",
+            category="system",
             metadata={
-                "category": "system",
                 "type": "test",
                 "network": "base-mainnet"
             }
@@ -97,7 +92,6 @@ async def test_mainnet_connection():
         # Search memories
         memories = await memory_client.search_memories(
             query="mainnet test",
-            user_id=agent.agent_id,
             limit=5
         )
         print(f"   🧠 Found {len(memories)} related memories")
@@ -157,7 +151,7 @@ async def test_mainnet_connection():
             "cost_per_decision": result.get('total_cost', 0) / max(1, result['cycle_count'])
         }
         
-        await bq_client.store_agent_metrics(metrics)
+        await bq_client.log_agent_metrics("athena-mainnet-test", metrics)
         print("   ✅ Metrics stored in BigQuery")
         
         print("\n✅ All systems operational! Ready for 24/7 deployment.")

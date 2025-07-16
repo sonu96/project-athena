@@ -15,11 +15,18 @@ logger = logging.getLogger(__name__)
 
 # Try to import CDP SDK
 try:
-    from cdp import Wallet, Cdp
+    from cdp import CdpClient
     CDP_AVAILABLE = True
 except ImportError:
-    logger.warning("CDP SDK not available. Running in simulation mode.")
-    CDP_AVAILABLE = False
+    try:
+        # Try alternative import
+        from coinbase.wallet.client import Client
+        from coinbase.wallet.model import Account
+        CDP_AVAILABLE = False  # Different API, still use simulation
+        logger.warning("Using Coinbase Client instead of CDP SDK. Running in simulation mode.")
+    except ImportError:
+        logger.warning("CDP SDK not available. Running in simulation mode.")
+        CDP_AVAILABLE = False
 
 
 class CDPClient:
@@ -36,25 +43,32 @@ class CDPClient:
     def __init__(self):
         self.wallet = None
         self.network = settings.network
-        self.simulation_mode = not CDP_AVAILABLE or settings.observation_mode
+        self.cdp_client = None
         
-        if self.simulation_mode:
-            logger.info("🎮 CDP running in simulation mode")
-            self._simulation_balance = settings.starting_treasury
-        else:
+        # Try to initialize CDP first
+        if CDP_AVAILABLE and not settings.observation_mode:
             self._initialize_cdp()
+        
+        # Set simulation mode based on whether CDP initialized successfully
+        if not self.cdp_client:
+            self.simulation_mode = True
+            logger.info("🎮 CDP running in simulation mode")
+        else:
+            self.simulation_mode = False
+        
+        # Always initialize simulation balance
+        self._simulation_balance = settings.starting_treasury
     
     def _initialize_cdp(self):
         """Initialize CDP SDK"""
         try:
-            # Configure CDP
-            Cdp.configure_from_json(
-                {
-                    "api_key_name": settings.cdp_api_key_name,
-                    "api_key_secret": settings.cdp_api_key_secret,
-                    "network": self.network
-                }
-            )
+            # CDP SDK expects these exact environment variable names
+            os.environ["CDP_API_KEY_ID"] = settings.cdp_api_key_name
+            os.environ["CDP_API_KEY_SECRET"] = settings.cdp_api_key_secret
+            
+            # Create CDP client
+            self.cdp_client = CdpClient()
+            self.simulation_mode = False
             
             logger.info(f"✅ CDP configured for {self.network}")
             
@@ -77,36 +91,40 @@ class CDPClient:
             }
         
         try:
-            wallet_path = "wallet_data/athena_wallet.json"
+            # Check if we have an existing wallet address in environment
+            existing_address = os.getenv("CDP_WALLET_ADDRESS")
             
-            # Check if wallet exists
-            if os.path.exists(wallet_path):
-                # Load existing wallet
-                self.wallet = Wallet.import_from_file(wallet_path)
-                logger.info(f"✅ Loaded existing wallet: {self.wallet.default_address.address}")
+            if existing_address:
+                # Use existing wallet address
+                logger.info(f"✅ Using existing wallet: {existing_address}")
+                self.wallet_address = existing_address
+                
+                # Try to load wallet from CDP
+                try:
+                    wallets = await self.cdp_client.list_wallets()
+                    for wallet in wallets:
+                        if wallet.default_address == existing_address:
+                            self.wallet = wallet
+                            break
+                except:
+                    pass
+                    
+                return {
+                    "address": existing_address,
+                    "network": self.network,
+                    "mode": "live"
+                }
             else:
-                # Create new wallet
-                self.wallet = Wallet.create()
+                # Create new wallet on BASE
+                self.wallet = await self.cdp_client.create_wallet(network_id="base-mainnet")
                 
-                # Save wallet data
-                os.makedirs("wallet_data", exist_ok=True)
-                self.wallet.export_to_file(wallet_path)
+                logger.info(f"✅ Created new wallet: {self.wallet.default_address}")
                 
-                logger.info(f"✅ Created new wallet: {self.wallet.default_address.address}")
-                
-                # Request testnet funds if on testnet
-                if "sepolia" in self.network.lower():
-                    try:
-                        faucet_tx = self.wallet.faucet()
-                        logger.info(f"💰 Requested testnet funds: {faucet_tx.transaction_hash}")
-                    except Exception as e:
-                        logger.warning(f"Faucet request failed: {e}")
-            
-            return {
-                "address": self.wallet.default_address.address,
-                "network": self.network,
-                "mode": "live"
-            }
+                return {
+                    "address": self.wallet.default_address,
+                    "network": self.wallet.network_id,
+                    "mode": "live"
+                }
             
         except Exception as e:
             logger.error(f"Failed to initialize wallet: {e}")
@@ -294,16 +312,70 @@ class CDPClient:
             if not self.wallet:
                 await self.initialize_wallet()
             
-            # CDP SDK contract read - this should be a read-only call
-            result = self.wallet.read_contract(
-                contract_address=contract_address,
-                method=method,
-                abi=json.dumps(abi),
-                args=args or []
+            # Import necessary CDP classes
+            from cdp import ContractCall, EncodedCall
+            
+            # Create contract call
+            if isinstance(abi, dict):
+                # Single function ABI
+                contract_abi = [abi]
+            else:
+                contract_abi = abi
+                
+            # Use EncodedCall for contract reading
+            call = EncodedCall(
+                to=contract_address,
+                data=self._encode_function_data(method, contract_abi, args or [])
             )
             
-            return result
+            # Execute the call
+            result = await self.wallet.invoke_contract(
+                contract_call=call
+            )
+            
+            return self._decode_result(result, abi)
             
         except Exception as e:
             logger.error(f"Failed to read contract: {e}")
             return None
+    
+    def _encode_function_data(self, method: str, abi: list, args: list) -> str:
+        """Encode function call data"""
+        try:
+            from web3 import Web3
+            
+            # Create function signature
+            function_abi = None
+            for item in abi:
+                if item.get("name") == method:
+                    function_abi = item
+                    break
+                    
+            if not function_abi:
+                return "0x"
+                
+            # Encode the function call
+            w3 = Web3()
+            contract = w3.eth.contract(abi=abi)
+            return contract.encodeABI(fn_name=method, args=args)
+            
+        except Exception as e:
+            logger.error(f"Failed to encode function data: {e}")
+            return "0x"
+    
+    def _decode_result(self, result: Any, abi: Dict[str, Any]) -> Any:
+        """Decode contract call result"""
+        try:
+            if not result:
+                return None
+                
+            # Simple decoding for common types
+            outputs = abi.get("outputs", [])
+            if outputs and outputs[0]["type"] == "uint256":
+                return int(result, 16) if isinstance(result, str) else result
+                
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to decode result: {e}")
+            return result
