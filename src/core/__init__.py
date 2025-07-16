@@ -1,14 +1,14 @@
-"""Core components of Athena DeFi Agent"""
+"""Core components for Athena agent"""
 
-from .treasury import TreasuryManager, TreasuryState
-from .memory_manager import MemoryManager
-from .market_detector import MarketConditionDetector
-from .agent import DeFiAgent
+from .consciousness import ConsciousnessState
+from .emotions import EmotionalState, EmotionalEngine
+from .treasury import TreasuryManager
+from .agent import AthenaAgent
 
 __all__ = [
+    "ConsciousnessState",
+    "EmotionalState", 
+    "EmotionalEngine",
     "TreasuryManager",
-    "TreasuryState", 
-    "MemoryManager",
-    "MarketConditionDetector",
-    "DeFiAgent"
+    "AthenaAgent"
 ]

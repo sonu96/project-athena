@@ -1,0 +1,51 @@
+# Cloud Build configuration for CI/CD
+
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/athena-agent:$COMMIT_SHA', '.']
+  
+  # Push to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/athena-agent:$COMMIT_SHA']
+  
+  # Tag as latest
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['tag', 'gcr.io/$PROJECT_ID/athena-agent:$COMMIT_SHA', 'gcr.io/$PROJECT_ID/athena-agent:latest']
+  
+  # Push latest tag
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/athena-agent:latest']
+  
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'athena-agent'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/athena-agent:$COMMIT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--memory'
+      - '4Gi'
+      - '--cpu'
+      - '2'
+      - '--min-instances'
+      - '1'
+      - '--max-instances'
+      - '3'
+      - '--port'
+      - '8080'
+      - '--allow-unauthenticated'
+
+# Build timeout
+timeout: 1200s
+
+# Substitutions
+substitutions:
+  _SERVICE_NAME: athena-agent
+  _REGION: us-central1

@@ -1,450 +1,272 @@
 """
-Treasury management with emotional states and survival mechanisms
+Treasury Management System
+
+Tracks financial state and implements survival pressure through cost tracking.
 """
 
-import asyncio
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
 import logging
-import json
-
-from ..data.firestore_client import FirestoreClient
-from ..data.bigquery_client import BigQueryClient
-from ..integrations.mem0_integration import Mem0Integration
-from ..config.settings import settings
+from dataclasses import dataclass
+from collections import deque
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
-class TreasuryState:
-    """Current treasury state with emotional indicators"""
-    balance_usd: float
-    daily_burn_rate: float
-    days_until_bankruptcy: int
-    emotional_state: str  # 'stable', 'cautious', 'desperate'
-    risk_tolerance: float  # 0.0 to 1.0
-    confidence_level: float  # 0.0 to 1.0
-    last_updated: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for storage"""
-        return {
-            'balance_usd': self.balance_usd,
-            'daily_burn_rate': self.daily_burn_rate,
-            'days_until_bankruptcy': self.days_until_bankruptcy,
-            'emotional_state': self.emotional_state,
-            'risk_tolerance': self.risk_tolerance,
-            'confidence_level': self.confidence_level,
-            'last_updated': self.last_updated.isoformat()
-        }
+class Transaction:
+    """Represents a financial transaction"""
+    timestamp: datetime
+    amount: float
+    category: str
+    description: str
+    balance_after: float
 
 
 class TreasuryManager:
-    """Manages agent treasury with survival instincts"""
+    """
+    Manages the agent's financial state and survival metrics
+    """
     
-    def __init__(self, firestore_client: FirestoreClient, memory_integration: Mem0Integration):
-        self.firestore = firestore_client
-        self.memory = memory_integration
-        self.current_state: Optional[TreasuryState] = None
+    def __init__(self, starting_balance: float = 100.0):
+        self.balance = starting_balance
+        self.starting_balance = starting_balance
+        self.total_spent = 0.0
+        self.total_earned = 0.0
         
-        # Treasury thresholds
-        self.thresholds = {
-            'critical': settings.critical_treasury_threshold_usd,  # $25
-            'warning': settings.warning_treasury_threshold_usd,    # $50
-            'comfortable': 100.0
+        # Transaction history (keep last 1000)
+        self.transactions: deque[Transaction] = deque(maxlen=1000)
+        
+        # Cost tracking by category
+        self.costs_by_category: Dict[str, float] = {
+            "llm": 0.0,
+            "gas": 0.0,
+            "memory": 0.0,
+            "api": 0.0,
+            "other": 0.0
         }
         
-        # Emotional state mappings
-        self.emotional_states = {
-            'desperate': {
-                'threshold': self.thresholds['critical'],
-                'risk_tolerance': 0.2,
-                'confidence': 0.3,
-                'description': 'Survival mode - extreme cost cutting required'
-            },
-            'cautious': {
-                'threshold': self.thresholds['warning'],
-                'risk_tolerance': 0.4,
-                'confidence': 0.6,
-                'description': 'Conservative mode - careful resource management'
-            },
-            'stable': {
-                'threshold': self.thresholds['comfortable'],
-                'risk_tolerance': 0.7,
-                'confidence': 0.8,
-                'description': 'Normal operations - balanced approach'
-            },
-            'confident': {
-                'threshold': 150.0,
-                'risk_tolerance': 0.8,
-                'confidence': 0.9,
-                'description': 'Growth mode - can take calculated risks'
-            }
-        }
+        # Daily cost tracking (last 30 days)
+        self.daily_costs: deque[Tuple[datetime, float]] = deque(maxlen=30)
+        self.hourly_costs: deque[Tuple[datetime, float]] = deque(maxlen=24)
         
-        # Cost tracking
-        self.cost_history: List[Dict[str, Any]] = []
-        self.daily_costs: Dict[str, float] = {}
-    
-    async def initialize(self, starting_balance: float = None) -> bool:
-        """Initialize treasury with starting balance"""
-        try:
-            if starting_balance is None:
-                starting_balance = settings.agent_starting_treasury
-            
-            # Create initial state
-            self.current_state = TreasuryState(
-                balance_usd=starting_balance,
-                daily_burn_rate=0.0,
-                days_until_bankruptcy=999,
-                emotional_state='stable',
-                risk_tolerance=0.7,
-                confidence_level=0.8
-            )
-            
-            # Store in Firestore
-            await self.firestore.update_treasury(self.current_state.to_dict())
-            
-            # Create initial memory
-            await self.memory.add_memory(
-                content=f"Treasury initialized with ${starting_balance}. Beginning agent life with stable emotional state.",
-                metadata={
-                    "category": "treasury_milestone",
-                    "importance": 0.8,
-                    "treasury_balance": starting_balance,
-                    "emotional_state": "stable"
-                }
-            )
-            
-            # Log to BigQuery
-            await self._log_treasury_snapshot("initialization")
-            
-            logger.info(f"✅ Treasury initialized with ${starting_balance}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Error initializing treasury: {e}")
-            return False
-    
-    async def track_cost(self, cost_amount: float, cost_type: str, description: str) -> bool:
-        """Track individual cost and update treasury"""
-        try:
-            if not self.current_state:
-                await self.load_state()
-            
-            # Update balance
-            self.current_state.balance_usd -= cost_amount
-            
-            # Track cost
-            cost_event = {
-                'amount': cost_amount,
-                'type': cost_type,
-                'description': description,
-                'timestamp': datetime.now(timezone.utc),
-                'remaining_balance': self.current_state.balance_usd,
-                'emotional_state': self.current_state.emotional_state
-            }
-            
-            self.cost_history.append(cost_event)
-            
-            # Update daily costs
-            today = datetime.now(timezone.utc).date().isoformat()
-            if today not in self.daily_costs:
-                self.daily_costs[today] = 0
-            self.daily_costs[today] += cost_amount
-            
-            # Log to Firestore
-            await self.firestore.log_cost_event({
-                'amount_usd': cost_amount,
-                'cost_type': cost_type,
-                'description': description,
-                'operation': 'agent_operation',
-                'llm_tokens': 0,  # Will be set by LLM integration
-                'api_calls': 1
-            })
-            
-            # Update burn rate
-            await self._update_burn_rate()
-            
-            # Update emotional state based on new balance
-            await self._update_emotional_state()
-            
-            # Save updated state
-            await self.firestore.update_treasury(self.current_state.to_dict())
-            
-            # Check for critical situations
-            await self._check_survival_status()
-            
-            logger.info(f"💰 Cost tracked: ${cost_amount} ({cost_type}) - Remaining: ${self.current_state.balance_usd:.2f}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Error tracking cost: {e}")
-            return False
-    
-    async def _update_burn_rate(self):
-        """Calculate and update daily burn rate"""
-        try:
-            # Get costs from last 7 days
-            cost_summary = await self.firestore.get_cost_summary(days=7)
-            
-            if cost_summary and cost_summary.get('total_cost', 0) > 0:
-                # Calculate average daily burn
-                days = cost_summary.get('period_days', 7)
-                self.current_state.daily_burn_rate = cost_summary['total_cost'] / days
-                
-                # Calculate days until bankruptcy
-                if self.current_state.daily_burn_rate > 0:
-                    self.current_state.days_until_bankruptcy = int(
-                        self.current_state.balance_usd / self.current_state.daily_burn_rate
-                    )
-                else:
-                    self.current_state.days_until_bankruptcy = 999
-            
-        except Exception as e:
-            logger.error(f"Error updating burn rate: {e}")
-    
-    async def _update_emotional_state(self):
-        """Update emotional state based on treasury level"""
-        balance = self.current_state.balance_usd
-        old_state = self.current_state.emotional_state
+        # Initialize first daily entry
+        self.daily_costs.append((datetime.utcnow().date(), 0.0))
+        self.hourly_costs.append((datetime.utcnow().replace(minute=0, second=0), 0.0))
         
-        # Determine new state based on balance
-        if balance <= self.thresholds['critical']:
-            new_state = 'desperate'
-        elif balance <= self.thresholds['warning']:
-            new_state = 'cautious'
-        elif balance >= 150.0:
-            new_state = 'confident'
+        logger.info(f"💰 Treasury initialized with ${starting_balance:.2f}")
+    
+    def record_cost(self, amount: float, category: str, description: str) -> float:
+        """
+        Record a cost and update balance
+        
+        Returns:
+            New balance after cost
+        """
+        if amount < 0:
+            raise ValueError("Cost amount must be positive")
+        
+        # Update balance
+        self.balance -= amount
+        self.total_spent += amount
+        
+        # Update category tracking
+        if category in self.costs_by_category:
+            self.costs_by_category[category] += amount
         else:
-            new_state = 'stable'
+            self.costs_by_category["other"] += amount
         
-        if new_state != old_state:
-            # Emotional state changed - update parameters
-            state_config = self.emotional_states[new_state]
-            self.current_state.emotional_state = new_state
-            self.current_state.risk_tolerance = state_config['risk_tolerance']
-            self.current_state.confidence_level = state_config['confidence']
-            
-            # Create memory of state change
-            await self.memory.add_memory(
-                content=f"Emotional state changed from {old_state} to {new_state} due to treasury level ${balance:.2f}. {state_config['description']}",
-                metadata={
-                    "category": "emotional_change",
-                    "importance": 0.8,
-                    "old_state": old_state,
-                    "new_state": new_state,
-                    "treasury_balance": balance,
-                    "trigger": "treasury_level"
-                }
-            )
-            
-            # Log state transition to BigQuery
-            await self._log_emotional_transition(old_state, new_state, balance)
-            
-            logger.info(f"🧠 Emotional state: {old_state} → {new_state} (${balance:.2f})")
-    
-    async def _check_survival_status(self):
-        """Check if agent is in survival mode and take action"""
-        if self.current_state.balance_usd <= self.thresholds['critical']:
-            # SURVIVAL MODE ACTIVATED
-            await self._activate_survival_mode()
-        elif self.current_state.days_until_bankruptcy <= 5:
-            # WARNING: Low runway
-            await self._activate_warning_mode()
-    
-    async def _activate_survival_mode(self):
-        """Activate emergency survival mode"""
-        try:
-            logger.warning(f"🚨 SURVIVAL MODE ACTIVATED! Balance: ${self.current_state.balance_usd:.2f}")
-            
-            # Query survival memories
-            survival_memories = await self.memory.query_memories(
-                query="survival emergency treasury critical low balance",
-                category="survival_critical",
-                limit=5
-            )
-            
-            # Create survival event memory
-            await self.memory.add_memory(
-                content=f"SURVIVAL MODE ACTIVATED: Treasury at ${self.current_state.balance_usd:.2f}, "
-                       f"{self.current_state.days_until_bankruptcy} days remaining. "
-                       f"Implementing emergency cost reduction and conservative strategies.",
-                metadata={
-                    "category": "survival_critical",
-                    "importance": 1.0,
-                    "emergency": True,
-                    "treasury_balance": self.current_state.balance_usd,
-                    "burn_rate": self.current_state.daily_burn_rate
-                }
-            )
-            
-            # Log survival event
-            await self.firestore.log_system_event(
-                "survival_mode_activated",
-                {
-                    "treasury_balance": self.current_state.balance_usd,
-                    "daily_burn_rate": self.current_state.daily_burn_rate,
-                    "days_remaining": self.current_state.days_until_bankruptcy,
-                    "survival_memories_found": len(survival_memories)
-                }
-            )
-            
-        except Exception as e:
-            logger.error(f"❌ Error activating survival mode: {e}")
-    
-    async def _activate_warning_mode(self):
-        """Activate warning mode for low runway"""
-        try:
-            logger.warning(f"⚠️ WARNING MODE: Only {self.current_state.days_until_bankruptcy} days of runway remaining!")
-            
-            # Create warning memory
-            await self.memory.add_memory(
-                content=f"WARNING: Treasury runway critically low - only {self.current_state.days_until_bankruptcy} days remaining at current burn rate of ${self.current_state.daily_burn_rate:.2f}/day",
-                metadata={
-                    "category": "survival_critical",
-                    "importance": 0.9,
-                    "warning": True,
-                    "days_remaining": self.current_state.days_until_bankruptcy
-                }
-            )
-            
-        except Exception as e:
-            logger.error(f"❌ Error activating warning mode: {e}")
-    
-    async def get_status(self) -> Dict[str, Any]:
-        """Get current treasury status"""
-        if not self.current_state:
-            await self.load_state()
+        # Create transaction
+        tx = Transaction(
+            timestamp=datetime.utcnow(),
+            amount=-amount,
+            category=category,
+            description=description,
+            balance_after=self.balance
+        )
+        self.transactions.append(tx)
         
-        # Determine overall status
-        if self.current_state.balance_usd <= self.thresholds['critical']:
-            status = 'critical'
-        elif self.current_state.balance_usd <= self.thresholds['warning']:
-            status = 'warning'
-        else:
-            status = 'healthy'
+        # Update daily/hourly tracking
+        self._update_time_based_costs(amount)
+        
+        logger.debug(f"💸 Cost recorded: ${amount:.4f} for {description} | Balance: ${self.balance:.2f}")
+        
+        return self.balance
+    
+    def record_earning(self, amount: float, description: str) -> float:
+        """
+        Record an earning (for V2 trading profits)
+        
+        Returns:
+            New balance after earning
+        """
+        if amount < 0:
+            raise ValueError("Earning amount must be positive")
+        
+        # Update balance
+        self.balance += amount
+        self.total_earned += amount
+        
+        # Create transaction
+        tx = Transaction(
+            timestamp=datetime.utcnow(),
+            amount=amount,
+            category="earning",
+            description=description,
+            balance_after=self.balance
+        )
+        self.transactions.append(tx)
+        
+        logger.info(f"💵 Earning recorded: ${amount:.2f} from {description} | Balance: ${self.balance:.2f}")
+        
+        return self.balance
+    
+    def get_burn_rate(self) -> Dict[str, float]:
+        """
+        Calculate burn rate at different time scales
+        
+        Returns:
+            Dict with hourly, daily, and weekly burn rates
+        """
+        now = datetime.utcnow()
+        
+        # Hourly burn rate (average of last 24 hours)
+        hourly_total = sum(cost for _, cost in self.hourly_costs)
+        hourly_rate = hourly_total / max(1, len(self.hourly_costs))
+        
+        # Daily burn rate (average of last 7 days)
+        recent_daily = [
+            cost for date, cost in self.daily_costs 
+            if (now.date() - date).days < 7
+        ]
+        daily_rate = sum(recent_daily) / max(1, len(recent_daily))
+        
+        # Weekly burn rate (average of last 30 days)
+        weekly_rate = sum(cost for _, cost in self.daily_costs) / max(1, len(self.daily_costs)) * 7
         
         return {
-            'balance': self.current_state.balance_usd,
-            'daily_burn': self.current_state.daily_burn_rate,
-            'days_remaining': self.current_state.days_until_bankruptcy,
-            'emotional_state': self.current_state.emotional_state,
-            'risk_tolerance': self.current_state.risk_tolerance,
-            'confidence': self.current_state.confidence_level,
-            'status': status,
-            'thresholds': self.thresholds,
-            'last_updated': self.current_state.last_updated.isoformat()
+            "hourly": hourly_rate,
+            "daily": daily_rate,
+            "weekly": weekly_rate
         }
     
-    async def load_state(self) -> bool:
-        """Load treasury state from Firestore"""
-        try:
-            treasury_data = await self.firestore.get_current_treasury()
-            
-            if treasury_data:
-                self.current_state = TreasuryState(
-                    balance_usd=treasury_data['balance_usd'],
-                    daily_burn_rate=treasury_data.get('daily_burn_rate', 0),
-                    days_until_bankruptcy=treasury_data.get('days_until_bankruptcy', 999),
-                    emotional_state=treasury_data.get('emotional_state', 'stable'),
-                    risk_tolerance=treasury_data.get('risk_tolerance', 0.5),
-                    confidence_level=treasury_data.get('confidence_level', 0.5)
-                )
-                return True
-            else:
-                logger.warning("No treasury state found, initializing new treasury")
-                await self.initialize()
-                return True
-                
-        except Exception as e:
-            logger.error(f"❌ Error loading treasury state: {e}")
-            return False
+    def calculate_runway(self) -> Dict[str, float]:
+        """
+        Calculate runway in different time units
+        
+        Returns:
+            Dict with runway in hours, days, and weeks
+        """
+        burn_rates = self.get_burn_rate()
+        
+        runway = {}
+        
+        # Calculate runway for each time scale
+        if burn_rates["hourly"] > 0:
+            runway["hours"] = self.balance / burn_rates["hourly"]
+        else:
+            runway["hours"] = float('inf')
+        
+        if burn_rates["daily"] > 0:
+            runway["days"] = self.balance / burn_rates["daily"]
+        else:
+            runway["days"] = float('inf')
+        
+        if burn_rates["weekly"] > 0:
+            runway["weeks"] = self.balance / burn_rates["weekly"]
+        else:
+            runway["weeks"] = float('inf')
+        
+        return runway
     
-    async def _log_treasury_snapshot(self, snapshot_type: str = "regular"):
-        """Log treasury snapshot to BigQuery"""
-        try:
-            snapshot_data = {
-                'balance_usd': self.current_state.balance_usd,
-                'daily_burn_rate': self.current_state.daily_burn_rate,
-                'days_until_bankruptcy': self.current_state.days_until_bankruptcy,
-                'emotional_state': self.current_state.emotional_state,
-                'risk_tolerance': self.current_state.risk_tolerance,
-                'confidence_level': self.current_state.confidence_level,
-                'snapshot_type': snapshot_type
+    def get_cost_breakdown(self) -> Dict[str, Dict[str, float]]:
+        """
+        Get detailed cost breakdown by category
+        
+        Returns:
+            Dict with totals and percentages by category
+        """
+        total = sum(self.costs_by_category.values())
+        
+        breakdown = {}
+        for category, amount in self.costs_by_category.items():
+            breakdown[category] = {
+                "total": amount,
+                "percentage": (amount / total * 100) if total > 0 else 0,
+                "average_per_tx": amount / max(1, len([t for t in self.transactions if t.category == category]))
             }
-            
-            await self.firestore.db.collection('agent_data_treasury').add({
-                **snapshot_data,
-                'timestamp': datetime.now(timezone.utc)
-            })
-            
-        except Exception as e:
-            logger.error(f"Error logging treasury snapshot: {e}")
+        
+        return breakdown
     
-    async def _log_emotional_transition(self, old_state: str, new_state: str, balance: float):
-        """Log emotional state transition to BigQuery"""
-        try:
-            # This would be logged to BigQuery in production
-            transition_data = {
-                'timestamp': datetime.now(timezone.utc).isoformat(),
-                'previous_state': old_state,
-                'new_state': new_state,
-                'balance_usd': balance,
-                'trigger': 'balance_change'
-            }
-            
-            logger.info(f"Emotional transition logged: {transition_data}")
-            
-        except Exception as e:
-            logger.error(f"Error logging emotional transition: {e}")
+    def get_financial_summary(self) -> Dict[str, Any]:
+        """
+        Get comprehensive financial summary
+        """
+        burn_rates = self.get_burn_rate()
+        runway = self.calculate_runway()
+        breakdown = self.get_cost_breakdown()
+        
+        return {
+            "balance": self.balance,
+            "starting_balance": self.starting_balance,
+            "total_spent": self.total_spent,
+            "total_earned": self.total_earned,
+            "net_change": self.balance - self.starting_balance,
+            "burn_rates": burn_rates,
+            "runway": runway,
+            "cost_breakdown": breakdown,
+            "transaction_count": len(self.transactions),
+            "days_active": (datetime.utcnow() - self.transactions[0].timestamp).days if self.transactions else 0
+        }
     
-    async def generate_survival_report(self) -> Dict[str, Any]:
-        """Generate comprehensive survival report"""
-        try:
-            status = await self.get_status()
-            cost_summary = await self.firestore.get_cost_summary(days=7)
+    def _update_time_based_costs(self, amount: float):
+        """Update hourly and daily cost tracking"""
+        now = datetime.utcnow()
+        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        current_date = now.date()
+        
+        # Update hourly costs
+        if self.hourly_costs and self.hourly_costs[-1][0] == current_hour:
+            # Update existing hour
+            self.hourly_costs[-1] = (current_hour, self.hourly_costs[-1][1] + amount)
+        else:
+            # New hour
+            self.hourly_costs.append((current_hour, amount))
+        
+        # Update daily costs
+        if self.daily_costs and self.daily_costs[-1][0] == current_date:
+            # Update existing day
+            self.daily_costs[-1] = (current_date, self.daily_costs[-1][1] + amount)
+        else:
+            # New day
+            self.daily_costs.append((current_date, amount))
+    
+    def should_activate_survival_mode(self) -> bool:
+        """Determine if survival mode should be activated"""
+        runway = self.calculate_runway()
+        return runway["days"] < 3
+    
+    def get_recent_transactions(self, limit: int = 10) -> List[Transaction]:
+        """Get recent transactions"""
+        return list(self.transactions)[-limit:]
+    
+    def estimate_time_until_milestone(self, milestone: float) -> Optional[timedelta]:
+        """
+        Estimate time until balance reaches a milestone
+        
+        Args:
+            milestone: Target balance
             
-            # Calculate survival metrics
-            survival_days_at_current_burn = (
-                int(status['balance'] / status['daily_burn'])
-                if status['daily_burn'] > 0 else 999
-            )
-            
-            # Determine survival recommendations
-            recommendations = []
-            
-            if status['emotional_state'] == 'desperate':
-                recommendations.extend([
-                    "CRITICAL: Immediately reduce all non-essential operations",
-                    "Switch to minimum observation frequency",
-                    "Use only cheapest LLM models",
-                    "Focus solely on capital preservation"
-                ])
-            elif status['emotional_state'] == 'cautious':
-                recommendations.extend([
-                    "Reduce observation frequency by 50%",
-                    "Limit expensive LLM calls",
-                    "Focus on low-risk opportunities",
-                    "Monitor burn rate closely"
-                ])
-            
-            report = {
-                'current_status': status,
-                'cost_analysis': cost_summary,
-                'survival_metrics': {
-                    'days_until_bankruptcy': survival_days_at_current_burn,
-                    'required_daily_burn_for_30_days': status['balance'] / 30,
-                    'current_vs_sustainable_ratio': status['daily_burn'] / (status['balance'] / 30) if status['balance'] > 0 else 0
-                },
-                'recommendations': recommendations,
-                'report_timestamp': datetime.now(timezone.utc).isoformat()
-            }
-            
-            return report
-            
-        except Exception as e:
-            logger.error(f"Error generating survival report: {e}")
-            return {}
+        Returns:
+            Timedelta if reachable, None if not
+        """
+        burn_rate = self.get_burn_rate()["daily"]
+        
+        if milestone >= self.balance:
+            # We need to earn money (V2 feature)
+            return None
+        elif burn_rate > 0:
+            days_until = (self.balance - milestone) / burn_rate
+            return timedelta(days=days_until)
+        else:
+            return None

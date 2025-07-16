@@ -1,23 +1,16 @@
-# Athena DeFi Agent - Production Dockerfile
-FROM python:3.11-slim
+# Athena DeFi Agent - Production Container
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-
-# Create app user for security
-RUN groupadd -g 1000 athena && \
-    useradd -r -u 1000 -g athena athena
+FROM python:3.10-slim
 
 # Set working directory
 WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    git \
     curl \
-    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -28,28 +21,21 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY src/ ./src/
-COPY cloud_functions/ ./cloud_functions/
-COPY sql/ ./sql/
-
-# Copy configuration files
-COPY .env.example .env
-COPY pytest.ini .
+COPY deployment/.env.example ./deployment/
 
 # Create necessary directories
-RUN mkdir -p logs data
+RUN mkdir -p wallet_data logs
 
-# Set ownership to app user
-RUN chown -R athena:athena /app
-
-# Switch to app user
-USER athena
-
-# Expose port for health checks (if needed)
-EXPOSE 8080
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import sys; sys.exit(0)" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
-# Default command - run the main agent
+# Expose API port
+EXPOSE 8080
+
+# Run the agent
 CMD ["python", "-m", "src.core.agent"]

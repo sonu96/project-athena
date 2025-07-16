@@ -1,115 +1,140 @@
 """
-Cognitive loop implementation using LangGraph
+Main Cognitive Loop - LangGraph workflow implementation
 
-This module creates the main consciousness loop that serves as Athena's 
-nervous system, implementing the Sense → Think → Feel → Decide → Learn cycle.
+Implements the Sense → Think → Feel → Decide → Learn cycle.
 """
 
-from langgraph.graph import StateGraph, START, END
+import logging
+from typing import Dict, Any
+
+from langgraph.graph import StateGraph, END
 from langsmith import traceable
 
-from .consciousness import ConsciousnessState
-from .nodes import SenseNode, ThinkNode, FeelNode, DecideNode, LearnNode
+from ..core.consciousness import ConsciousnessState
+from .nodes import (
+    sense_environment,
+    think_analysis,
+    feel_emotions,
+    make_decision,
+    learn_patterns
+)
+
+logger = logging.getLogger(__name__)
 
 
-def create_cognitive_loop() -> StateGraph:
-    """Create the main cognitive loop that serves as Athena's nervous system
+def create_cognitive_workflow() -> StateGraph:
+    """
+    Create the main cognitive loop workflow
     
-    This creates a continuous loop where:
-    1. Sense: Perceive the environment (market data, wallet balance)
-    2. Think: Analyze and understand the situation
-    3. Feel: Update emotional state based on treasury and conditions
-    4. Decide: Make decisions based on full context and emotions
-    5. Learn: Form memories and extract lessons from experiences
-    
-    The loop then continues back to Sense, creating a continuous consciousness.
-    
-    Returns:
-        Compiled StateGraph representing the cognitive loop
+    Flow:
+    1. Sense - Gather data from environment
+    2. Think - Analyze with LLM
+    3. Feel - Process emotions
+    4. Decide - Make decisions
+    5. Learn - Form memories and patterns
     """
     
-    # Initialize the graph with consciousness state
+    # Create workflow with ConsciousnessState
     workflow = StateGraph(ConsciousnessState)
     
-    # Initialize nodes (each wraps existing components)
-    sense_node = SenseNode()    # Wraps market_data_collector and CDP
-    think_node = ThinkNode()     # Wraps market_analysis_flow
-    feel_node = FeelNode()       # Updates emotional state based on treasury
-    decide_node = DecideNode()   # Wraps decision_flow
-    learn_node = LearnNode()     # Wraps memory_manager
+    # Add nodes
+    workflow.add_node("sense", sense_environment)
+    workflow.add_node("think", think_analysis)
+    workflow.add_node("feel", feel_emotions)
+    workflow.add_node("decide", make_decision)
+    workflow.add_node("learn", learn_patterns)
     
-    # Add nodes to graph with descriptive names
-    workflow.add_node("sense", sense_node.execute)
-    workflow.add_node("think", think_node.execute)
-    workflow.add_node("feel", feel_node.execute)
-    workflow.add_node("decide", decide_node.execute)
-    workflow.add_node("learn", learn_node.execute)
+    # Define flow
+    workflow.set_entry_point("sense")
     
-    # Define the cognitive flow
-    workflow.add_edge(START, "sense")      # Start by sensing environment
-    workflow.add_edge("sense", "think")    # Sense leads to thinking
-    workflow.add_edge("think", "feel")     # Thinking influences emotions
-    workflow.add_edge("feel", "decide")    # Emotions affect decisions
-    workflow.add_edge("decide", "learn")   # Decisions create learning
-    workflow.add_edge("learn", "sense")    # Learning updates perception (continuous loop)
-    
-    # Note: We don't add an edge to END, creating an infinite loop
-    # The agent will run continuously until externally stopped
-    
-    return workflow.compile()
-
-
-@traceable(name="cognitive_loop_with_termination")
-def create_cognitive_loop_with_termination() -> StateGraph:
-    """Create a cognitive loop with optional termination conditions
-    
-    This variant allows the loop to end based on certain conditions,
-    useful for testing or specific operational modes.
-    """
-    
-    # Initialize the graph with consciousness state
-    workflow = StateGraph(ConsciousnessState)
-    
-    # Initialize nodes
-    sense_node = SenseNode()
-    think_node = ThinkNode()
-    feel_node = FeelNode()
-    decide_node = DecideNode()
-    learn_node = LearnNode()
-    
-    # Add nodes to graph
-    workflow.add_node("sense", sense_node.execute)
-    workflow.add_node("think", think_node.execute)
-    workflow.add_node("feel", feel_node.execute)
-    workflow.add_node("decide", decide_node.execute)
-    workflow.add_node("learn", learn_node.execute)
-    
-    # Define the flow
-    workflow.add_edge(START, "sense")
+    # Linear flow for V1
     workflow.add_edge("sense", "think")
     workflow.add_edge("think", "feel")
     workflow.add_edge("feel", "decide")
     workflow.add_edge("decide", "learn")
+    workflow.add_edge("learn", END)
     
-    # Conditional edge: continue or end based on state
-    def should_continue(state: ConsciousnessState) -> str:
-        """Determine if the loop should continue"""
-        # End if critical error
-        if len(state.get("errors", [])) > 5:
-            return "end"
-        # End if bankruptcy imminent
-        if state.get("days_until_bankruptcy", 999) < 1:
-            return "end"
-        # Otherwise continue
-        return "sense"
-    
-    workflow.add_conditional_edges(
-        "learn",
-        should_continue,
-        {
-            "sense": "sense",  # Continue loop
-            "end": END         # Terminate
-        }
-    )
-    
+    # Compile workflow
     return workflow.compile()
+
+
+@traceable(name="cognitive_cycle")
+async def run_cognitive_cycle(
+    workflow: StateGraph,
+    initial_state: ConsciousnessState
+) -> ConsciousnessState:
+    """
+    Run a single cognitive cycle
+    
+    Args:
+        workflow: Compiled LangGraph workflow
+        initial_state: Current consciousness state
+        
+    Returns:
+        Updated consciousness state
+    """
+    
+    try:
+        # Increment cycle counter
+        initial_state.increment_cycle()
+        
+        logger.info(
+            f"🔄 Starting cognitive cycle #{initial_state.cycle_count} "
+            f"[{initial_state.emotional_state.value}]"
+        )
+        
+        # Run workflow
+        result = await workflow.ainvoke(initial_state)
+        
+        # Extract final state
+        if isinstance(result, ConsciousnessState):
+            final_state = result
+        else:
+            # Handle different return formats
+            final_state = result.get("__end__", initial_state)
+        
+        # Log cycle summary
+        logger.info(
+            f"✅ Cycle #{final_state.cycle_count} complete - "
+            f"Cost: ${final_state.total_cost - initial_state.total_cost:.4f} | "
+            f"Memories: {len(final_state.memory_formation_pending)} formed | "
+            f"Patterns: {len(final_state.active_patterns)} active"
+        )
+        
+        return final_state
+        
+    except Exception as e:
+        logger.error(f"❌ Error in cognitive cycle: {e}", exc_info=True)
+        initial_state.errors.append(f"Cycle error: {str(e)}")
+        return initial_state
+
+
+def should_run_cycle(state: ConsciousnessState) -> bool:
+    """
+    Determine if a new cognitive cycle should run
+    
+    Based on:
+    - Time since last cycle
+    - Emotional state (observation frequency)
+    - Resource availability
+    """
+    
+    # Check if in survival mode
+    if state.emotional_state == EmotionalState.DESPERATE:
+        # Only essential cycles in desperate state
+        if state.cycle_count % 10 != 0:  # Every 10th cycle
+            logger.debug("Skipping cycle - conserving resources in desperate state")
+            return False
+    
+    # Check treasury
+    if state.treasury_balance < 1.0:
+        logger.warning("Treasury below $1 - halting operations")
+        return False
+    
+    # Check error rate
+    recent_errors = len([e for e in state.errors[-10:] if e])
+    if recent_errors > 5:
+        logger.warning(f"High error rate ({recent_errors}/10) - pausing operations")
+        return False
+    
+    return True

@@ -1,103 +1,65 @@
-# Athena DeFi Agent - Development Docker Compose
 version: '3.8'
 
 services:
   athena-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: athena-defi-agent
+    build: .
+    container_name: athena-agent
     restart: unless-stopped
     environment:
-      # Agent Configuration
-      - AGENT_ID=docker-dev-agent
-      - AGENT_STARTING_TREASURY=100.0
-      - NETWORK=base-sepolia
-      
-      # API Keys (override in .env file)
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - MEM0_API_KEY=${MEM0_API_KEY}
-      - CDP_API_KEY_NAME=${CDP_API_KEY_NAME}
-      - CDP_API_KEY_SECRET=${CDP_API_KEY_SECRET}
-      
-      # GCP Configuration
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials/gcp-key.json
-      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
-      - FIRESTORE_DATABASE=${FIRESTORE_DATABASE:-athena-dev}
-      - BIGQUERY_DATASET=${BIGQUERY_DATASET:-athena_dev}
-      
-      # LangSmith Configuration
-      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
-      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-athena-dev}
-      
-      # Development settings
+      - ENV=development
       - LOG_LEVEL=INFO
-      - ENVIRONMENT=development
-    
+    env_file:
+      - .env
     volumes:
-      # Mount source code for development
-      - ./src:/app/src:ro
+      - ./wallet_data:/app/wallet_data
       - ./logs:/app/logs
-      
-      # Mount GCP credentials (create this file separately)
-      - ./credentials:/app/credentials:ro
-    
+      - ${GOOGLE_APPLICATION_CREDENTIALS}:${GOOGLE_APPLICATION_CREDENTIALS}:ro
     ports:
-      # Health check port
       - "8080:8080"
-    
-    networks:
-      - athena-network
-    
-    # Resource limits
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.25'
-    
-    # Health check
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8080/health', timeout=5)"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-
-  # Local testing database (optional)
-  firestore-emulator:
-    image: gcr.io/google.com/cloudsdktool/cloud-sdk:latest
-    container_name: firestore-emulator
-    command: |
-      sh -c "gcloud beta emulators firestore start --host-port=0.0.0.0:8180"
-    ports:
-      - "8180:8180"
     networks:
       - athena-network
-    profiles:
-      - testing
 
-  # BigQuery emulator (optional)
-  bigquery-emulator:
-    image: ghcr.io/goccy/bigquery-emulator:latest
-    container_name: bigquery-emulator
+  # Optional: Local monitoring with Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: athena-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./deployment/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
     ports:
-      - "9050:9050"
+      - "9090:9090"
     networks:
       - athena-network
-    profiles:
-      - testing
+
+  # Optional: Grafana for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: athena-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - athena-network
 
 networks:
   athena-network:
     driver: bridge
 
 volumes:
-  athena-logs:
-    driver: local
-  athena-data:
-    driver: local
+  prometheus_data:
+  grafana_data:
