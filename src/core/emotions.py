@@ -37,28 +37,28 @@ class EmotionalEngine:
     # LLM model selection by emotional state
     LLM_MODELS = {
         EmotionalState.DESPERATE: {
-            "model": "claude-3-haiku-20240307",
+            "model": "gemini-2.0-flash-exp",
             "max_tokens": 256,
             "temperature": 0.3,
-            "cost_per_1k": 0.00025  # $0.25 per 1M tokens
+            "cost_per_1k": 0.0  # Free tier
         },
         EmotionalState.CAUTIOUS: {
-            "model": "gpt-3.5-turbo",
+            "model": "gemini-2.0-flash-exp",
             "max_tokens": 512,
             "temperature": 0.5,
-            "cost_per_1k": 0.0005   # $0.50 per 1M tokens
+            "cost_per_1k": 0.0  # Free tier
         },
         EmotionalState.STABLE: {
-            "model": "claude-3-sonnet-20240229",
+            "model": "gemini-1.5-pro",
             "max_tokens": 1024,
             "temperature": 0.7,
-            "cost_per_1k": 0.003    # $3 per 1M tokens
+            "cost_per_1k": 0.00125  # $1.25 per 1M tokens
         },
         EmotionalState.CONFIDENT: {
-            "model": "claude-3-opus-20240229",
+            "model": "gemini-1.5-pro",
             "max_tokens": 2048,
             "temperature": 0.8,
-            "cost_per_1k": 0.015    # $15 per 1M tokens
+            "cost_per_1k": 0.00125  # $1.25 per 1M tokens
         }
     }
     

@@ -11,8 +11,9 @@ import hashlib
 
 from langsmith import traceable
 
-from ...core.consciousness import ConsciousnessState, Memory, Pattern
+from ...core.consciousness import ConsciousnessState, Memory, Pattern, PoolObservation
 from ...memory.client import MemoryClient
+from typing import Optional
 from ...database.firestore_client import FirestoreClient
 
 logger = logging.getLogger(__name__)

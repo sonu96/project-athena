@@ -5,7 +5,7 @@ Tracks financial state and implements survival pressure through cost tracking.
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import logging
 from dataclasses import dataclass
 from collections import deque
