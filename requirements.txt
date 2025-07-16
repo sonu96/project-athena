@@ -7,11 +7,10 @@ pydantic-settings==2.1.0
 langchain==0.1.0
 langgraph==0.0.26
 langsmith==0.0.77
-openai==1.6.1
+openai==1.35.0
 anthropic==0.8.1
 
-# Memory system
-mem0ai==0.0.15
+# Memory system - using Mem0 Cloud API, no local package needed
 
 # Blockchain
 cdp-sdk==0.0.5
