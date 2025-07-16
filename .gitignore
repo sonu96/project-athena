@@ -79,3 +79,14 @@ mem0_data/.env
 *.key
 service-account-key.json
 cost_tracking.json
+
+# Test files with hardcoded secrets (DO NOT COMMIT)
+cdp_status.json
+create_cdp_wallet.py
+create_wallet_fixed.py
+test_cdp_debug.py
+test_cdp_direct.py
+test_cdp_simple.py
+test_cdp_working.py
+test_contract_read.py
+test_ed25519.py
