@@ -103,18 +103,20 @@ async def test_mainnet_connection():
         print(f"   🧠 Found {len(memories)} related memories")
         
         # Test Aerodrome pool observation
-        print("\n5. Testing Aerodrome pool observation...")
+        print("\n5. Testing Aerodrome pool observation with CDP...")
         
         # Get top pools
-        print("   Fetching top Aerodrome pools...")
+        print("   Fetching top Aerodrome pools from BASE mainnet...")
         pools = await agent.observe_top_pools(limit=5)
         
         if pools:
             print(f"   ✅ Found {len(pools)} active pools:")
             for pool in pools[:3]:  # Show top 3
                 print(f"      - {pool['symbol']}: TVL ${pool['tvl_usd']:,.2f}, APY {pool['total_apy']:.2%}")
+                print(f"        Address: {pool['address']}")
+                print(f"        Type: {pool['type']}")
         else:
-            print("   ⚠️  No pools found (might need to implement pool fetching)")
+            print("   ⚠️  No pools found - CDP may be in simulation mode")
         
         # Run one cognitive cycle
         print("\n6. Running cognitive cycle...")

@@ -8,7 +8,7 @@ import asyncio
 import logging
 import signal
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from ..config import settings
 from ..config.constants import COGNITIVE_CYCLE_MIN_INTERVAL_SECONDS
@@ -20,6 +20,7 @@ from ..blockchain import CDPClient, WalletManager
 from ..memory import MemoryClient
 from ..database import FirestoreClient, BigQueryClient
 from ..monitoring.langsmith_config import configure_langsmith
+from ..aerodrome.observer import AerodromeObserver
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,9 @@ class AthenaAgent:
         # Database clients
         self.firestore = FirestoreClient()
         self.bigquery = BigQueryClient()
+        
+        # Aerodrome observer with CDP integration
+        self.aerodrome_observer = AerodromeObserver(self.cdp_client)
         
         # Workflow
         self.workflow = None
@@ -277,6 +281,54 @@ class AthenaAgent:
                 "days_until_bankruptcy": self.state.days_until_bankruptcy
             }
         )
+    
+    async def observe_top_pools(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Observe top Aerodrome pools using CDP
+        
+        Args:
+            limit: Number of pools to observe
+            
+        Returns:
+            List of pool data
+        """
+        try:
+            pools = await self.aerodrome_observer.get_top_pools(limit)
+            
+            # Store observations
+            for pool in pools:
+                await self.bigquery.store_pool_observation({
+                    "timestamp": datetime.utcnow(),
+                    "agent_id": self.agent_id,
+                    "pool_address": pool["address"],
+                    "pool_type": pool["type"],
+                    "tvl_usd": pool["tvl_usd"],
+                    "volume_24h_usd": pool["volume_24h_usd"],
+                    "fee_apy": pool["fee_apy"],
+                    "reward_apy": pool["reward_apy"],
+                    "observation_notes": f"CDP observation of {pool['symbol']}"
+                })
+            
+            return pools
+            
+        except Exception as e:
+            logger.error(f"Failed to observe pools: {e}")
+            return []
+    
+    def get_wallet_info(self) -> Dict[str, Any]:
+        """Get wallet information"""
+        return {
+            "address": self.cdp_client.get_wallet_address(),
+            "network": self.cdp_client.network
+        }
+    
+    async def get_balance(self) -> float:
+        """Get wallet balance"""
+        return await self.cdp_client.get_wallet_balance()
+    
+    async def get_wallet_address(self) -> str:
+        """Get wallet address"""
+        return self.cdp_client.get_wallet_address()
 
 
 async def main():

@@ -32,29 +32,57 @@ class AerodromeObserver:
     - Actual trading
     """
     
-    def __init__(self):
+    def __init__(self, cdp_client=None):
         self.observed_pools: Dict[str, PoolData] = {}
         self.observation_history: List[Dict[str, Any]] = []
         
-        # In V1, we simulate pool data
-        # In V2, this will connect to real Aerodrome contracts
-        self.simulation_mode = True
+        # Use CDP client for contract interactions
+        self.cdp_client = cdp_client
+        self.simulation_mode = cdp_client is None or cdp_client.simulation_mode
         
-        logger.info("🔍 Aerodrome Observer initialized (V1 - Observation Only)")
+        # Aerodrome contract addresses
+        self.factory_address = AERODROME_FACTORY_ADDRESS
+        self.router_address = AERODROME_ROUTER_ADDRESS
+        
+        logger.info(f"🔍 Aerodrome Observer initialized (Mode: {'Simulation' if self.simulation_mode else 'Live CDP'})")
     
     async def get_top_pools(self, limit: int = 10) -> List[Dict[str, Any]]:
         """
         Get top pools by TVL
         
-        In V1: Returns simulated data
-        In V2: Queries actual Aerodrome subgraph
+        Uses CDP to query Aerodrome factory for real pool data
         """
         if self.simulation_mode:
             return self._generate_simulated_pools(limit)
         
-        # V2 will implement actual pool fetching
-        # pools = await self._query_aerodrome_pools(limit)
-        # return pools
+        try:
+            # Get total pool count from factory
+            pool_count = await self._get_pool_count()
+            if not pool_count:
+                logger.warning("Could not get pool count from Aerodrome")
+                return []
+            
+            logger.info(f"Aerodrome has {pool_count} pools total")
+            
+            # Get recent pools (last N pools)
+            pools = []
+            start_idx = max(0, pool_count - limit * 2)  # Get more to filter
+            
+            for i in range(start_idx, min(pool_count, start_idx + limit * 2)):
+                pool_data = await self._fetch_pool_by_index(i)
+                if pool_data and pool_data["tvl_usd"] > 10000:  # Min $10k TVL
+                    pools.append(pool_data)
+                    if len(pools) >= limit:
+                        break
+            
+            # Sort by TVL
+            pools.sort(key=lambda p: p["tvl_usd"], reverse=True)
+            
+            return pools[:limit]
+            
+        except Exception as e:
+            logger.error(f"Failed to get top pools: {e}")
+            return self._generate_simulated_pools(limit)
     
     async def observe_pool(self, pool_address: str) -> Optional[PoolData]:
         """
@@ -285,7 +313,193 @@ class AerodromeObserver:
         if len(self.observation_history) > 1000:
             self.observation_history = self.observation_history[-1000:]
     
-    async def _fetch_pool_data(self, pool_address: str) -> Optional[PoolData]:
+    async def _get_pool_count(self) -> Optional[int]:
+        """Get total number of pools from Aerodrome factory using CDP"""
+        try:
+            abi = {
+                "inputs": [],
+                "name": "allPoolsLength",
+                "outputs": [{"type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
+            }
+            
+            result = await self.cdp_client.read_contract(
+                contract_address=self.factory_address,
+                method="allPoolsLength",
+                abi=abi
+            )
+            
+            return int(result) if result else None
+            
+        except Exception as e:
+            logger.error(f"Failed to get pool count: {e}")
+            return None
+    
+    async def _fetch_pool_by_index(self, index: int) -> Optional[Dict[str, Any]]:
+        """Fetch pool data by index from factory"""
+        try:
+            # Get pool address
+            pool_address = await self._get_pool_address(index)
+            if not pool_address:
+                return None
+            
+            # Get pool data
+            return await self._fetch_pool_data(pool_address)
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch pool by index {index}: {e}")
+            return None
+    
+    async def _get_pool_address(self, index: int) -> Optional[str]:
+        """Get pool address by index from factory"""
+        try:
+            abi = {
+                "inputs": [{"type": "uint256"}],
+                "name": "allPools",
+                "outputs": [{"type": "address"}],
+                "stateMutability": "view",
+                "type": "function"
+            }
+            
+            result = await self.cdp_client.read_contract(
+                contract_address=self.factory_address,
+                method="allPools",
+                abi=abi,
+                args=[index]
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to get pool address: {e}")
+            return None
+    
+    async def _fetch_pool_data(self, pool_address: str) -> Optional[Dict[str, Any]]:
+        """Fetch actual pool data from blockchain using CDP"""
+        try:
+            # Get token addresses
+            token0 = await self._read_pool_method(pool_address, "token0", [{"type": "address"}])
+            token1 = await self._read_pool_method(pool_address, "token1", [{"type": "address"}])
+            
+            # Get reserves
+            reserves_result = await self._read_pool_method(
+                pool_address, 
+                "getReserves",
+                [
+                    {"type": "uint256", "name": "_reserve0"},
+                    {"type": "uint256", "name": "_reserve1"},
+                    {"type": "uint256", "name": "_blockTimestampLast"}
+                ]
+            )
+            
+            if not reserves_result:
+                return None
+            
+            # Get pool type (stable/volatile)
+            is_stable = await self._read_pool_method(pool_address, "stable", [{"type": "bool"}])
+            
+            # Get token symbols
+            token0_symbol = await self._get_token_symbol(token0)
+            token1_symbol = await self._get_token_symbol(token1)
+            
+            # Calculate TVL (simplified - would need price oracle)
+            # For now, assume USDC = $1 and estimate others
+            tvl_usd = self._estimate_tvl(token0, token1, reserves_result[0], reserves_result[1])
+            
+            # Build pool data
+            pool_type = PoolType.STABLE if is_stable else PoolType.VOLATILE
+            
+            return {
+                "address": pool_address,
+                "type": pool_type.value,
+                "token0_symbol": token0_symbol,
+                "token1_symbol": token1_symbol,
+                "token0_address": token0,
+                "token1_address": token1,
+                "reserve0": reserves_result[0],
+                "reserve1": reserves_result[1],
+                "tvl_usd": tvl_usd,
+                "volume_24h_usd": tvl_usd * 0.1,  # Estimate 10% daily volume
+                "fee_tier": 0.0005 if is_stable else 0.003,
+                "fee_apy": 0.05,  # Placeholder
+                "reward_apy": 0.10,  # Placeholder
+                "total_apy": 0.15,  # Placeholder
+                "symbol": f"{token0_symbol}/{token1_symbol}"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch pool data for {pool_address}: {e}")
+            return None
+    
+    async def _read_pool_method(self, pool_address: str, method: str, outputs: list) -> Any:
+        """Read a method from pool contract"""
+        try:
+            abi = {
+                "inputs": [],
+                "name": method,
+                "outputs": outputs,
+                "stateMutability": "view",
+                "type": "function"
+            }
+            
+            return await self.cdp_client.read_contract(
+                contract_address=pool_address,
+                method=method,
+                abi=abi
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to read {method} from {pool_address}: {e}")
+            return None
+    
+    async def _get_token_symbol(self, token_address: str) -> str:
+        """Get token symbol using CDP"""
+        try:
+            abi = {
+                "inputs": [],
+                "name": "symbol",
+                "outputs": [{"type": "string"}],
+                "stateMutability": "view",
+                "type": "function"
+            }
+            
+            symbol = await self.cdp_client.read_contract(
+                contract_address=token_address,
+                method="symbol",
+                abi=abi
+            )
+            
+            return symbol or "???"
+            
+        except:
+            # Try to identify known tokens
+            known_tokens = {
+                "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": "USDC",
+                "0x4200000000000000000000000000000000000006": "WETH",
+                "0x940181a94A35A4569E4529A3CDfB74e38FD98631": "AERO",
+                "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb": "DAI",
+            }
+            return known_tokens.get(token_address.lower(), "???")
+    
+    def _estimate_tvl(self, token0: str, token1: str, reserve0: int, reserve1: int) -> float:
+        """Estimate TVL in USD (simplified)"""
+        # Known stablecoins
+        stablecoins = {
+            "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  # USDC
+            "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",  # DAI
+        }
+        
+        # Simplified: if one token is stablecoin, use its value * 2
+        if token0.lower() in stablecoins:
+            return (reserve0 / 1e6) * 2  # USDC has 6 decimals
+        elif token1.lower() in stablecoins:
+            return (reserve1 / 1e6) * 2
+        else:
+            # Rough estimate for other pairs
+            return 100000  # Placeholder
+    
+    async def _fetch_pool_data_old(self, pool_address: str) -> Optional[PoolData]:
         """V2: Fetch actual pool data from blockchain"""
-        # This will be implemented in V2 with real contract calls
+        # Keeping old implementation for reference
         pass

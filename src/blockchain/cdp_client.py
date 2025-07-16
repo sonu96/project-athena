@@ -237,3 +237,73 @@ class CDPClient:
         except Exception as e:
             logger.error(f"Failed to sign message: {e}")
             return "ERROR_SIGNATURE"
+    
+    async def invoke_contract(self, contract_address: str, method: str, abi: Dict[str, Any], args: list = None) -> Any:
+        """
+        Invoke a smart contract method using CDP
+        
+        Args:
+            contract_address: Contract address
+            method: Method name to call
+            abi: Method ABI
+            args: Method arguments
+            
+        Returns:
+            Contract response
+        """
+        if self.simulation_mode:
+            logger.info(f"[SIMULATION] Would invoke {method} on {contract_address}")
+            return None
+        
+        try:
+            if not self.wallet:
+                await self.initialize_wallet()
+            
+            # CDP SDK contract invocation
+            result = self.wallet.invoke_contract(
+                contract_address=contract_address,
+                method=method,
+                abi=json.dumps(abi),
+                args=args or []
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to invoke contract: {e}")
+            return None
+    
+    async def read_contract(self, contract_address: str, method: str, abi: Dict[str, Any], args: list = None) -> Any:
+        """
+        Read data from a smart contract using CDP
+        
+        Args:
+            contract_address: Contract address
+            method: Method name to call
+            abi: Method ABI
+            args: Method arguments
+            
+        Returns:
+            Contract response
+        """
+        if self.simulation_mode:
+            logger.info(f"[SIMULATION] Would read {method} from {contract_address}")
+            return None
+        
+        try:
+            if not self.wallet:
+                await self.initialize_wallet()
+            
+            # CDP SDK contract read - this should be a read-only call
+            result = self.wallet.read_contract(
+                contract_address=contract_address,
+                method=method,
+                abi=json.dumps(abi),
+                args=args or []
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to read contract: {e}")
+            return None
