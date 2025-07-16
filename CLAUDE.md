@@ -21,7 +21,7 @@ Athena is an autonomous AI agent designed for leverage trading on Aerodrome Fina
 ### Technology Stack
 - **Language**: Python 3.10+
 - **AI Framework**: LangGraph (sophisticated state machines)
-- **LLM Integration**: Dynamic model selection (Haiku → GPT-3.5 → Sonnet → Opus)
+- **LLM Integration**: Google Gemini via Vertex AI (Flash 2.0 → Gemini 1.5 Pro)
 - **Memory System**: Mem0 Cloud API
 - **Blockchain**: CDP AgentKit (BASE network)
 - **Protocol**: Aerodrome Finance

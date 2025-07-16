@@ -21,7 +21,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY src/ ./src/
-COPY deployment/.env.example ./deployment/
+COPY CLAUDE.md .
+COPY README.md .
 
 # Create necessary directories
 RUN mkdir -p wallet_data logs
@@ -37,5 +38,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
 # Expose API port
 EXPOSE 8080
 
-# Run the agent
-CMD ["python", "-m", "src.core.agent"]
+# Set PORT for Cloud Run
+ENV PORT=8080
+
+# Run the API server
+CMD ["python", "-m", "src.api.server"]

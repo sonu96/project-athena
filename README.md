@@ -100,17 +100,43 @@ pytest tests/unit/
 
 ## 🚢 Deployment
 
-The agent is designed to run on Google Cloud Run:
+### Local Testing with Mainnet
 
 ```bash
-# Build Docker image
-docker build -t athena-agent .
+# Test mainnet connection
+python test_mainnet.py
 
-# Deploy to Cloud Run
-gcloud run deploy athena-agent \
-  --image gcr.io/YOUR_PROJECT/athena-agent:latest \
-  --region us-central1
+# Run continuous test (10 minutes)
+python test_mainnet.py --continuous 10
 ```
+
+### Deploy to Google Cloud Run (24/7)
+
+```bash
+# Use the deployment script
+./deploy_cloud.sh
+
+# Or manually:
+# 1. Build and push Docker image
+docker build -t gcr.io/project-athena-development/athena-agent:latest .
+docker push gcr.io/project-athena-development/athena-agent:latest
+
+# 2. Deploy to Cloud Run
+gcloud run deploy athena-agent-mainnet \
+  --image gcr.io/project-athena-development/athena-agent:latest \
+  --region us-central1 \
+  --memory 4Gi \
+  --cpu 2 \
+  --min-instances 1 \
+  --max-instances 3
+
+# 3. Monitor logs
+gcloud logging read "resource.labels.service_name=athena-agent-mainnet" --limit=50
+```
+
+### Production Configuration
+
+Use `.env.mainnet` for production settings with BASE mainnet addresses.
 
 ## 📖 Documentation
 
