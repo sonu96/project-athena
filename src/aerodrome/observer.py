@@ -36,9 +36,11 @@ class AerodromeObserver:
         self.observed_pools: Dict[str, PoolData] = {}
         self.observation_history: List[Dict[str, Any]] = []
         
-        # Use CDP client for contract interactions
+        # Use CDP client for contract interactions - MAINNET ONLY
         self.cdp_client = cdp_client
-        self.simulation_mode = cdp_client is None or cdp_client.simulation_mode
+        if cdp_client is None:
+            raise ValueError("CDP client is required for mainnet data")
+        self.simulation_mode = False  # NEVER use simulation
         
         # Aerodrome contract addresses
         self.factory_address = AERODROME_FACTORY_ADDRESS

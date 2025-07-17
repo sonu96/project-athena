@@ -45,9 +45,11 @@ class CDPClient:
         self.network = settings.network
         self.cdp_client = None
         
-        # Try to initialize CDP first
-        if CDP_AVAILABLE and not settings.observation_mode:
-            self._initialize_cdp()
+        # Always initialize CDP for mainnet - NO SIMULATION
+        if not CDP_AVAILABLE:
+            raise RuntimeError("CDP SDK is required. Cannot run in simulation mode.")
+        
+        self._initialize_cdp()
         
         # Set simulation mode based on whether CDP initialized successfully
         if not self.cdp_client:

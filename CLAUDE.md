@@ -44,6 +44,17 @@ Athena is an autonomous AI agent designed for leverage trading on Aerodrome Fina
 - ✅ **BONUS: Enterprise security with Google Cloud Secret Manager**
 - ✅ **BONUS: $30 cost protection with automatic shutdown**
 
+## 🎯 CRITICAL REQUIREMENTS
+
+### ALWAYS Use CDP and Mainnet Data
+- **NO SIMULATION MODE**: All data must come from real Aerodrome mainnet contracts
+- **CDP REQUIRED**: Always use CDP AgentKit for blockchain interactions
+- **REAL DATA ONLY**: Never use simulated or mock pool data
+- **BASE MAINNET**: All operations must target BASE mainnet (chain ID: 8453)
+- **LIVE CONTRACTS**: 
+  - Aerodrome Factory: `0x420DD381b31aEf6683db6B902084cB0FFECe40Da`
+  - Aerodrome Router: `0xcF77a3Ba9A5CA399B7c97c74d54e5b1Beb874E43`
+
 ## 🔐 Security & Cost Management Implementation
 
 ### Enterprise Security (Google Cloud Secret Manager)

@@ -14,15 +14,15 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
-COPY requirements.txt .
+COPY requirements.phase1.txt requirements.txt
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY src/ ./src/
-COPY CLAUDE.md .
-COPY README.md .
+# COPY CLAUDE.md .  # Skip if not present
+# COPY README.md .  # Skip if not present
 
 # Create necessary directories
 RUN mkdir -p wallet_data logs
@@ -41,5 +41,5 @@ EXPOSE 8080
 # Set PORT for Cloud Run
 ENV PORT=8080
 
-# Run the API server
-CMD ["python", "-m", "src.api.server"]
+# Run the simple server for Phase 1
+CMD ["python", "/app/src/simple_server.py"]
