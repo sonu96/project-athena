@@ -1,4 +1,0 @@
-functions-framework==3.5.0
-google-cloud-bigquery==3.13.0
-web3==6.11.3
-requests==2.31.0
